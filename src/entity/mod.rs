@@ -266,7 +266,7 @@ impl <'a> Wrapper<'a> {
         Some((entity, wrapper))
     }
 
-    pub fn get<'b>(&'b mut self, index: usize) -> Option<&'b mut Entity> {
+    pub fn get_by_index(&mut self, index: usize) -> Option<&mut Entity> {
         if index == self.borrowed_entity_position {
             None
         } else {
@@ -277,6 +277,13 @@ impl <'a> Wrapper<'a> {
         let a: &mut [T] = unsafe { mem::transmute(self.inner as *mut [T]) };
         a.get_mut(index)
         */
+    }
+
+    pub fn get(&mut self, id: Id<Entity>) -> Option<&mut Entity> {
+        match self.get_position(id) {
+            Some(pos) => self.get_by_index(pos),
+            None => None,
+        }
     }
 
     pub fn iter(&mut self) -> WrapperIter {
@@ -290,8 +297,19 @@ impl <'a> Wrapper<'a> {
             }
         }
     }
+
+    // XXX: We should probably have a &self version
+    pub fn get_position(&mut self, id: Id<Entity>) -> Option<usize> {
+        for (position, entity) in self.iter().enumerate() {
+            if entity.get_id() == id {
+                return Some(position);
+            }
+        }
+        None
+    }
 }
 
+// TODO: Have a *const version
 pub struct WrapperIter<'a> {
     ptr: *mut Entity,
     end: *mut Entity,
@@ -328,5 +346,28 @@ impl <'a> IterMutWrapper<'a> {
         let res = Wrapper::new(self.inner, self.current_position);
         self.current_position += 1;
         res
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{Entity, EntityStore};
+    use id::Id;
+    #[test]
+    fn test() {
+        let mut store = EntityStore::new();
+        store.push(Entity::fake_player(Id::forge(0)));
+        store.push(Entity::fake_player(Id::forge(1)));
+        store.push(Entity::fake_player(Id::forge(2)));
+        {
+            let mut double_iter = store.iter_mut_wrapper();
+            while let Some((entity,mut wrapper)) = double_iter.next_item() {
+                let id = entity.get_id();
+                for other in wrapper.iter() {
+                    assert!(id != other.get_id());
+                }
+                assert!(wrapper.get(id).is_none());
+            }
+        }
     }
 }
