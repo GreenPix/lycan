@@ -150,6 +150,15 @@ impl Entity {
                     100)
     }
 
+    pub fn fake_ai() -> Entity {
+        Entity::new(
+            EntityType::Invoked(None),
+            Pnt2::new(1.0, 1.0),
+            Direction::South,
+            Stats{speed: DEFAULT_SPEED},
+            100)
+    }
+
     pub fn dump(&self, f: &mut Formatter, indent: &str) -> Result<(),fmt::Error> {
         try!(writeln!(f, "{}Entity {}", indent, self.id));
         self.data.dump(f, indent)

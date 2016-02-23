@@ -108,14 +108,20 @@ impl Game {
     }
 
     // Spawn a new instance if needed
-    fn assign_actor_to_map(&mut self, event_loop: &mut EventLoop<Self>, map: Id<Map>, actor: NetworkActor) {
+    fn assign_actor_to_map(
+        &mut self,
+        event_loop: &mut EventLoop<Self>,
+        map: Id<Map>,
+        actor: NetworkActor,
+        entities: Vec<Entity>,
+        ) {
         match self.instances.get_mut(&map) {
             Some(instances) => {
                 // TODO: Load balancing
                 let register_new_instance = match instances.iter_mut().nth(0) {
                     Some((_id, instance)) => {
                         // An instance is already there, send the actor to it
-                        instance.send(Command::NewClient(actor)).unwrap();
+                        instance.send(Command::NewClient(actor,entities)).unwrap();
                         None
                     }
                     None => {
@@ -123,7 +129,7 @@ impl Game {
                         let (id, instance) = Instance::spawn_instance(
                             event_loop.channel(),
                             self.scripts.clone());
-                        instance.send(Command::NewClient(actor)).unwrap();
+                        instance.send(Command::NewClient(actor,entities)).unwrap();
                         Some((id, instance))
                     }
                 };
@@ -174,8 +180,7 @@ impl Handler for Game {
                             actor.register_entity(entity.get_id());
                             let notification = NetworkNotification::this_is_you(entity.get_id().as_u64());
                             actor.queue_message(Message::new(notification));
-                            actor.push_entity(entity);
-                            self.assign_actor_to_map(event_loop, map, actor);
+                            self.assign_actor_to_map(event_loop, map, actor, vec![entity]);
                         }
                     }
                 }

@@ -9,7 +9,7 @@ use time::{Duration,SteadyTime};
 
 use id::Id;
 use entity::{self,Entity,EntityStore};
-use actor::{NetworkActor,ActorId};
+use actor::{NetworkActor,ActorId,AiActor};
 use messages::{self,Command,Notification,Request};
 use network::Message;
 use scripts::AaribaScripts;
@@ -25,7 +25,8 @@ lazy_static! {
 
 #[derive(Debug,Default)]
 struct Actors {
-    //internal: HashMap<ActorId, InternalActor>,
+    // Design questions: separate all actors? Put them in enum? Use trait objects?
+    internal_actors: HashMap<ActorId, AiActor>,
     external_actors: HashMap<ActorId, NetworkActor>,
 }
 
@@ -41,6 +42,20 @@ impl Actors {
                 entry.insert(actor);
             }
         }
+    }
+
+    fn register_internal(&mut self, actor: AiActor) {
+        let id = actor.get_id();
+        match self.internal_actors.entry(id) {
+            Entry::Occupied(mut entry) => {
+                error!("Erasing old actor {:?}", entry.get());
+                entry.insert(actor);
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(actor);
+            }
+        }
+
     }
 
     fn unregister_client(&mut self, id: ActorId) -> Option<NetworkActor> {
@@ -67,7 +82,10 @@ impl Actors {
         for (_, actor) in self.external_actors.iter_mut() {
             actor.get_commands(&mut commands_buffer);
         }
-        // TODO: Internal actors
+
+        for (_, actor) in self.internal_actors.iter_mut() {
+            actor.get_commands(&mut commands_buffer);
+        }
         commands_buffer
     }
 
@@ -78,20 +96,21 @@ impl Actors {
         for (_, actor) in self.external_actors.iter_mut() {
             actor.execute_orders(entities, notifications, previous);
         }
+        for (_, actor) in self.internal_actors.iter_mut() {
+            actor.execute_orders(entities, notifications, previous);
+        }
     }
 
     fn assign_entity_to_actor(&mut self, actor: ActorId, entity: Id<Entity>) -> bool {
-        match self.external_actors.get_mut(&actor) {
-            Some(actor) => {
-                actor.register_entity(entity);
-                true
-            }
-            None => {
-                // TODO: Match with internal actors
-                unimplemented!();
-                //false
-            }
+        if let Some(actor) = self.external_actors.get_mut(&actor) {
+            actor.register_entity(entity);
+            return true;
         }
+        if let Some(actor) = self.internal_actors.get_mut(&actor) {
+            actor.register_entity(entity);
+            return true;
+        }
+        false
     }
 
     fn ready<H:Handler>(&mut self, event_loop: &mut EventLoop<H>, token: Token, event: EventSet) {
@@ -120,8 +139,6 @@ impl Actors {
         }
         Ok(())
     }
-
-    //fn register_internal(&mut self, actor: InternalActor);
 }
 
 
@@ -164,7 +181,7 @@ impl Instance {
     }
 
     fn new(request: Sender<Request>, scripts: AaribaScripts) -> Instance {
-        Instance {
+        let mut instance = Instance {
             id: Id::new(),
             entities: EntityStore::new(),
             actors: Default::default(),
@@ -175,13 +192,17 @@ impl Instance {
             prev_notifications: Default::default(),
             next_notifications: Default::default(),
             scripts: scripts,
-        }
+        };
+
+        // XXX Fake an AI on the map
+        instance.add_fake_ai();
+        instance
     }
 
     fn apply(&mut self, event_loop: &mut EventLoop<Self>, command: Command) {
         match command {
-            Command::NewClient(actor) => {
-                self.register_client(event_loop, actor);
+            Command::NewClient(actor,entities) => {
+                self.register_client(event_loop, actor, entities);
             }
             Command::Shutdown => {
                 self.shutdown(event_loop);
@@ -198,7 +219,12 @@ impl Instance {
         }
     }
 
-    fn register_client(&mut self, event_loop: &mut EventLoop<Self>, mut actor: NetworkActor) {
+    fn register_client(
+        &mut self,
+        event_loop: &mut EventLoop<Self>,
+        mut actor: NetworkActor,
+        entities: Vec<Entity>,
+        ) {
         let id = actor.get_id();
         trace!("Registering actor {} in instance {}", id, self.id);
         match actor.register(event_loop) {
@@ -212,7 +238,7 @@ impl Instance {
                     let message = Message::new(notification.into());
                     actor.send_message(event_loop, message);
                 }
-                for entity in actor.drain_entities() {
+                for entity in entities {
                     let entity_id = entity.get_id();
                     let position = entity.get_position();
                     let skin = entity.get_skin();
@@ -326,6 +352,15 @@ impl Instance {
         debug!("Notifications: {:?}", self.next_notifications);
         self.prev_notifications.clear();
         mem::swap(&mut self.prev_notifications, &mut self.next_notifications);
+    }
+
+    fn add_fake_ai(&mut self) {
+        let ai = AiActor::fake();
+        let id = ai.get_id();
+        self.actors.register_internal(ai);
+
+        let entity = Entity::fake_ai();
+        self.assign_entity_to_actor(id, entity);
     }
 }
 
