@@ -13,7 +13,7 @@ use data::Map;
 use entity::Entity;
 use messages::{Command,Request,NetworkNotification};
 use network::Message;
-use scripts::AaribaScripts;
+use scripts::{AaribaScripts,BehaviourTrees};
 
 use self::resource_manager::ResourceManager;
 use self::arriving_client::ArrivingClientManager;
@@ -69,6 +69,8 @@ impl Game {
 
         // XXX: AN UNWRAP -> to solve when we got time
         let scripts = AaribaScripts::get_from_url(&parameters.configuration_url).unwrap();
+        let behaviour_trees = BehaviourTrees::get_from_url(&parameters.configuration_url).unwrap();
+        behaviour_trees.run_fake();
 
         let mut event_loop = try!(EventLoop::new());
         try!(event_loop.register(&server, SERVER, EventSet::all(), PollOpt::level()));

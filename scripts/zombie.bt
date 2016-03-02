@@ -1,0 +1,6 @@
+tree zombie {
+        sequence {
+                print_text("EAAAAAATTTTTT"),
+                print_text("BRRRRAIIIIIINNNNNSSSSS"),
+        }
+}

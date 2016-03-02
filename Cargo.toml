@@ -32,6 +32,9 @@ git = "https://github.com/Greenpix/lycan-serialize.git"
 [dependencies.aariba]
 git = "https://github.com/GreenPix/aariba.git"
 
+[dependencies.behaviour-tree]
+git = "https://github.com/GreenPix/behaviour-tree.git"
+
 [[bin]]
 name = "lycan"
 doc = false

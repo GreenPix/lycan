@@ -19,6 +19,7 @@ extern crate rand;
 extern crate aariba;
 extern crate hyper;
 extern crate bytes;
+extern crate behaviour_tree;
 
 pub mod actor;
 pub mod entity;
@@ -26,6 +27,7 @@ pub mod game;
 pub mod instance;
 pub mod id;
 pub mod data;
+pub mod ai;
 mod scripts;
 mod network;
 
