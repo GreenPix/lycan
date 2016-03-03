@@ -1,11 +1,13 @@
 use std::collections::HashSet;
 use std::fmt::{self,Debug,Formatter};
 
+use behaviour_tree::tree::BehaviourTreeNode;
 use id::Id;
 use actor::ActorId;
 use entity::{Entity,EntityStore};
 use messages::{self,Command,Notification,EntityOrder};
-use scripts::BehaviourTree;
+use scripts::{BehaviourTree};
+use ai::Context;
 
 pub struct AiActor {
     id: ActorId,
@@ -36,6 +38,10 @@ impl AiActor {
                       entities: &mut EntityStore,
                       notifications: &mut Vec<Notification>,
                       _previous: &[Notification]) {
+        // Context should give access to storage / current game state
+        let string = String::from("Hello World");
+        let mut context = Context { s: &string };
+        self.tree.visit(&mut context);
         // Do something with behaviour trees
     }
     pub fn register_entity(&mut self, entity: Id<Entity>) {
