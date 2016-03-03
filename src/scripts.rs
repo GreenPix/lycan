@@ -14,7 +14,7 @@ use behaviour_tree;
 
 use ai::{Context,ActionNode,ActionNodeFactory,LeavesCollection};
 
-type BehaviourTreeFactory = TreeFactory<ActionNodeFactory>;
+pub type BehaviourTreeFactory = TreeFactory<ActionNodeFactory>;
 pub type BehaviourTree = behaviour_tree::BehaviourTree<ActionNode>;
 
 #[derive(Debug,Clone)]
@@ -61,6 +61,7 @@ impl AaribaScripts {
     }
 }
 
+#[derive(Clone)]
 pub struct BehaviourTrees {
     inner: HashMap<String, BehaviourTreeFactory>,
 }
@@ -86,8 +87,8 @@ impl BehaviourTrees {
         Ok(trees)
     }
 
-    pub fn generate_tree(&self, name: &str) -> Option<BehaviourTree> {
-        self.inner.get(name).map(|factory| factory.optimize())
+    pub fn generate_factory(&self, name: &str) -> Option<BehaviourTreeFactory> {
+        self.inner.get(name).map(|f| f.clone())
     }
 
     pub fn run_fake(&self) {

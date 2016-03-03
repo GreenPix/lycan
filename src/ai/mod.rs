@@ -2,17 +2,37 @@ use std::collections::HashMap;
 
 use behaviour_tree::tree::{BehaviourTreeNode};
 use behaviour_tree::tree::{LeafNodeFactory,VisitResult};
-use behaviour_tree::standard::Value;
+use behaviour_tree::parser::Value;
 use behaviour_tree::FactoryProducer;
 
 pub type ActionNode = Box<for<'a> BehaviourTreeNode<Context<'a>>>;
-pub type ActionNodeFactory = Box<LeafNodeFactory<Output=Box<for<'a> BehaviourTreeNode<Context<'a>>>>>;
+//pub type ActionNodeFactory = Box<LeafNodeFactory<Output=Box<for<'a> BehaviourTreeNode<Context<'a>>>>>;
+pub type ActionNodeFactory = Box<BoxedClone<Output=Box<for<'a> BehaviourTreeNode<Context<'a>>>>>;
 pub type ActionNodeFactoryFactory = fn(&Option<Value>) -> Result<ActionNodeFactory,String>;
+
+pub trait BoxedClone: LeafNodeFactory {
+    fn boxed_clone(&self) -> ActionNodeFactory;
+}
+
+impl Clone for ActionNodeFactory {
+    fn clone(&self) -> ActionNodeFactory {
+        (**self).boxed_clone()
+    }
+}
+impl <T: ?Sized> BoxedClone for T
+where T: Clone,
+      T: 'static,
+      T: LeafNodeFactory<Output=Box<for<'a> BehaviourTreeNode<Context<'a>>>> {
+    fn boxed_clone(&self) -> ActionNodeFactory {
+        Box::new(self.clone())
+    }
+}
 
 pub struct Context<'a> {
     pub s: &'a str,
 }
 
+#[derive(Clone)]
 pub struct Prototype<T> {
     pub inner: T,
 }
