@@ -362,7 +362,7 @@ impl Instance {
     }
 
     fn add_fake_ai(&mut self) {
-        let ai = AiActor::fake();
+        let ai = AiActor::fake(self.trees.generate_tree("zombie").unwrap());
         let id = ai.get_id();
         self.actors.register_internal(ai);
 

@@ -1,16 +1,29 @@
+use std::collections::HashSet;
+use std::fmt::{self,Debug,Formatter};
+
 use id::Id;
 use actor::ActorId;
-use std::collections::HashSet;
 use entity::{Entity,EntityStore};
 use messages::{self,Command,Notification,EntityOrder};
+use scripts::BehaviourTree;
 
-
-#[derive(Debug)]
 pub struct AiActor {
     id: ActorId,
     entities: HashSet<Id<Entity>>,
+    tree: BehaviourTree,
     // Behaviour Tree
     // Behaviour Tree data
+}
+
+impl Debug for AiActor {
+    fn fmt(&self, f: &mut Formatter) -> Result<(),fmt::Error> {
+        let tree = "[behaviour tree]";
+        f.debug_struct("AiActor")
+            .field("id", &self.id)
+            .field("entities", &self.entities)
+            .field("tree", &tree)
+            .finish()
+    }
 }
 
 impl AiActor {
@@ -29,10 +42,11 @@ impl AiActor {
         self.entities.insert(entity);
     }
 
-    pub fn fake() -> AiActor {
+    pub fn fake(tree: BehaviourTree) -> AiActor {
         AiActor {
             id: Id::new(),
             entities: Default::default(),
+            tree: tree,
         }
     }
 }

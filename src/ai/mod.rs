@@ -5,9 +5,9 @@ use behaviour_tree::tree::{LeafNodeFactory,VisitResult};
 use behaviour_tree::parser::Value;
 use behaviour_tree::FactoryProducer;
 
-pub type ActionNode = Box<for<'a> BehaviourTreeNode<Context<'a>>>;
+pub type ActionNode = Box<for<'a> BehaviourTreeNode<Context<'a>> + Send>;
 //pub type ActionNodeFactory = Box<LeafNodeFactory<Output=Box<for<'a> BehaviourTreeNode<Context<'a>>>>>;
-pub type ActionNodeFactory = Box<BoxedClone<Output=Box<for<'a> BehaviourTreeNode<Context<'a>>>>>;
+pub type ActionNodeFactory = Box<BoxedClone<Output=ActionNode>>;
 pub type ActionNodeFactoryFactory = fn(&Option<Value>) -> Result<ActionNodeFactory,String>;
 
 pub trait BoxedClone: LeafNodeFactory + Send {
@@ -19,11 +19,11 @@ impl Clone for ActionNodeFactory {
         (**self).boxed_clone()
     }
 }
-impl <T: ?Sized> BoxedClone for T
+impl <T> BoxedClone for T
 where T: Clone,
       T: 'static,
       T: Send,
-      T: LeafNodeFactory<Output=Box<for<'a> BehaviourTreeNode<Context<'a>>>> {
+      T: LeafNodeFactory<Output=ActionNode> {
     fn boxed_clone(&self) -> ActionNodeFactory {
         Box::new(self.clone())
     }
@@ -49,6 +49,7 @@ impl <T> Prototype<T> {
 impl <T> LeafNodeFactory for Prototype<T>
 where T: Clone, 
       T: 'static,
+      T: Send,
       T: for <'a> BehaviourTreeNode<Context<'a>> {
     type Output = ActionNode;
     fn instanciate(&self) -> Self::Output {
