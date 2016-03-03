@@ -12,7 +12,7 @@ use entity::{self,Entity,EntityStore};
 use actor::{NetworkActor,ActorId,AiActor};
 use messages::{self,Command,Notification,Request};
 use network::Message;
-use scripts::AaribaScripts;
+use scripts::{BehaviourTrees,AaribaScripts};
 
 lazy_static! {
     // 16.666 ms (60 Hz)
@@ -154,6 +154,7 @@ pub struct Instance {
     prev_notifications: Vec<Notification>,
     next_notifications: Vec<Notification>,
     scripts: AaribaScripts,
+    trees: BehaviourTrees,
 
     // XXX: Do we need to change the refresh period?
     refresh_period: Duration,
@@ -161,8 +162,10 @@ pub struct Instance {
 
 impl Instance {
     pub fn spawn_instance(request: Sender<Request>,
-                          scripts: AaribaScripts) -> (Id<Self>, Sender<Command>) {
-        let mut instance = Instance::new(request, scripts);
+                          scripts: AaribaScripts,
+                          trees: BehaviourTrees,
+                          ) -> (Id<Self>, Sender<Command>) {
+        let mut instance = Instance::new(request, scripts, trees);
         let mut config = EventLoopConfig::default();
         config.timer_tick_ms((instance.refresh_period.num_milliseconds() / 2) as u64);
         let mut event_loop = EventLoop::configured(config).unwrap();
@@ -180,7 +183,10 @@ impl Instance {
         (id, sender)
     }
 
-    fn new(request: Sender<Request>, scripts: AaribaScripts) -> Instance {
+    fn new(request: Sender<Request>,
+           scripts: AaribaScripts,
+           trees: BehaviourTrees,
+           ) -> Instance {
         let mut instance = Instance {
             id: Id::new(),
             entities: EntityStore::new(),
@@ -192,6 +198,7 @@ impl Instance {
             prev_notifications: Default::default(),
             next_notifications: Default::default(),
             scripts: scripts,
+            trees: trees,
         };
 
         // XXX Fake an AI on the map

@@ -91,12 +91,8 @@ impl BehaviourTrees {
         self.inner.get(name).map(|f| f.clone())
     }
 
-    pub fn run_fake(&self) {
-        let factory = self.inner.get("zombie").unwrap();
-        let mut tree = factory.optimize();
-        let string = String::from("Hello");
-        let mut context = Context { s: &string };
-        tree.visit(&mut context);
+    pub fn generate_tree(&self, name: &str) -> Option<BehaviourTree> {
+        self.inner.get(name).map(|f| f.optimize())
     }
 }
 

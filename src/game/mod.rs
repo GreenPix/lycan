@@ -47,10 +47,15 @@ pub struct Game {
 
     // TODO: Should this be integrated with the resource manager?
     scripts: AaribaScripts,
+    trees: BehaviourTrees,
 }
 
 impl Game {
-    fn new(server: TcpListener, scripts: AaribaScripts) -> Game {
+    fn new(
+        server: TcpListener,
+        scripts: AaribaScripts,
+        trees: BehaviourTrees,
+        ) -> Game {
         Game {
             instances: HashMap::new(),
             actors_positions: HashMap::new(),
@@ -58,6 +63,7 @@ impl Game {
             resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS),
             arriving_clients: ArrivingClientManager::new(),
             scripts: scripts,
+            trees: trees,
         }
     }
 
@@ -70,12 +76,11 @@ impl Game {
         // XXX: AN UNWRAP -> to solve when we got time
         let scripts = AaribaScripts::get_from_url(&parameters.configuration_url).unwrap();
         let behaviour_trees = BehaviourTrees::get_from_url(&parameters.configuration_url).unwrap();
-        behaviour_trees.run_fake();
 
         let mut event_loop = try!(EventLoop::new());
         try!(event_loop.register(&server, SERVER, EventSet::all(), PollOpt::level()));
         let sender = event_loop.channel();
-        let mut game = Game::new(server, scripts);
+        let mut game = Game::new(server, scripts, behaviour_trees);
 
         // XXX: Hacks
         let fake_tokens = authentication::generate_fake_authtok();
@@ -130,7 +135,9 @@ impl Game {
                         // No instance for this map, spawn one
                         let (id, instance) = Instance::spawn_instance(
                             event_loop.channel(),
-                            self.scripts.clone());
+                            self.scripts.clone(),
+                            self.trees.clone(),
+                            );
                         instance.send(Command::NewClient(actor,entities)).unwrap();
                         Some((id, instance))
                     }

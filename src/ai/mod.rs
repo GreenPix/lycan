@@ -10,7 +10,7 @@ pub type ActionNode = Box<for<'a> BehaviourTreeNode<Context<'a>>>;
 pub type ActionNodeFactory = Box<BoxedClone<Output=Box<for<'a> BehaviourTreeNode<Context<'a>>>>>;
 pub type ActionNodeFactoryFactory = fn(&Option<Value>) -> Result<ActionNodeFactory,String>;
 
-pub trait BoxedClone: LeafNodeFactory {
+pub trait BoxedClone: LeafNodeFactory + Send {
     fn boxed_clone(&self) -> ActionNodeFactory;
 }
 
@@ -22,6 +22,7 @@ impl Clone for ActionNodeFactory {
 impl <T: ?Sized> BoxedClone for T
 where T: Clone,
       T: 'static,
+      T: Send,
       T: LeafNodeFactory<Output=Box<for<'a> BehaviourTreeNode<Context<'a>>>> {
     fn boxed_clone(&self) -> ActionNodeFactory {
         Box::new(self.clone())
