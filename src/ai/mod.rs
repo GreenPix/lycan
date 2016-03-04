@@ -8,7 +8,7 @@ use behaviour_tree::parser::Value;
 use behaviour_tree::FactoryProducer;
 
 use id::Id;
-use entity::{Entity,EntityStore};
+use entity::{Entity,EntityStore,Direction};
 
 pub type ActionNode = Box<for<'a, 'b> BehaviourTreeNode<Context<'a, 'b>> + Send>;
 //pub type ActionNodeFactory = Box<LeafNodeFactory<Output=Box<for<'a> BehaviourTreeNode<Context<'a>>>>>;
@@ -167,6 +167,58 @@ pub fn get_closest_target(options: &Option<Value>) -> Result<ActionNodeFactory, 
     Ok(Box::new(Prototype::new(GetClosestTarget { max_sqdistance: 10000.0 })))
 }
 
+#[derive(Clone)]
+// TODO: Timeout? Max distance? Stop condition?
+pub struct WalkToTarget;
+
+impl <'a,'b> BehaviourTreeNode<Context<'a,'b>> for WalkToTarget {
+    fn visit(&mut self, context: &mut Context) -> VisitResult {
+        // TODO: Proper pathfinding
+
+        let (me, mut others) = match context.entities.get_mut_wrapper(context.me) {
+            None => {
+                warn!("Main entity {} was not found in entities list", context.me);
+                return VisitResult::Failure;
+            }
+            Some((me, others)) => (me, others),
+        };
+        let target = match context.storage.target {
+            None => return VisitResult::Failure,
+            Some(id) => match others.get(id) {
+                None => {
+                    warn!("Could not find target {}", id);
+                    me.walk(None);
+                    return VisitResult::Failure;
+                }
+                Some(o) => o,
+            }
+        };
+        let vector = target.get_position() - me.get_position();
+        let abs_diff_x = vector.x.abs();
+        let abs_diff_y = vector.y.abs();
+        if abs_diff_x > abs_diff_y {
+            if vector.x.is_sign_positive() {
+                me.walk(Some(Direction::East));
+            } else {
+                me.walk(Some(Direction::West));
+            }
+        } else {
+            if vector.y.is_sign_positive() {
+                me.walk(Some(Direction::North));
+            } else {
+                me.walk(Some(Direction::South));
+            }
+        }
+        VisitResult::Running
+    }
+}
+
+pub fn walk_to_target(options: &Option<Value>) -> Result<ActionNodeFactory, String> {
+    // TODO
+    Ok(Box::new(Prototype::new(WalkToTarget)))
+}
+
+
 #[derive(Default)]
 pub struct LeavesCollection {
     inner: HashMap<String,ActionNodeFactoryFactory>,
@@ -209,6 +261,7 @@ impl LeavesCollection {
         let collection = insert_all!(
             "print_text" => print_text,
             "get_closest_target" => get_closest_target,
+            "walk_to_target" => walk_to_target,
             //"increment" => increment,
 
             );

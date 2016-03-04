@@ -62,7 +62,7 @@ dependencies = [
 [[package]]
 name = "behaviour-tree"
 version = "0.0.1"
-source = "git+https://github.com/GreenPix/behaviour-tree.git#0239e82b1a29459b8142490b880f988b9404748f"
+source = "git+https://github.com/GreenPix/behaviour-tree.git#688dc30e1bc0cf546d7037586fbfc1d7087bd611"
 dependencies = [
  "flat-tree 0.0.1 (git+https://github.com/GreenPix/flat-tree.git)",
  "lalrpop 0.10.0 (registry+https://github.com/rust-lang/crates.io-index)",

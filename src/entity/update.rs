@@ -59,10 +59,10 @@ impl Entity {
         match order {
             Order::Walk(orientation) => {
                 match orientation {
-                    None => self.data.walk = false,
+                    None => self.data.walking = false,
                     Some(o) => {
                         self.data.orientation = o;
-                        self.data.walk = true;
+                        self.data.walking = true;
                     }
                 }
                 Ok(Some(Notification::walk(self.id.as_u64(), orientation)))
@@ -115,7 +115,7 @@ impl Entity {
         }
 
         // Assume no collisions at the moment ...
-        let unitary_speed = if self.data.walk {
+        let unitary_speed = if self.data.walking {
             match self.data.orientation {
                 Direction::North => Vec2::new(0.0, 1.0),
                 Direction::South => Vec2::new(0.0, -1.0),
