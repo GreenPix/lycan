@@ -126,6 +126,10 @@ impl Entity {
         self.data.pv
     }
 
+    pub fn get_orientation(&self) -> Direction {
+        self.data.orientation
+    }
+
     pub fn walk(&mut self, orientation: Option<Direction>) {
         match orientation {
             Some(o) => {

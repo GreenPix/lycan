@@ -196,17 +196,36 @@ impl <'a,'b> BehaviourTreeNode<Context<'a,'b>> for WalkToTarget {
         let vector = target.get_position() - me.get_position();
         let abs_diff_x = vector.x.abs();
         let abs_diff_y = vector.y.abs();
-        if abs_diff_x > abs_diff_y {
-            if vector.x.is_sign_positive() {
-                me.walk(Some(Direction::East));
-            } else {
-                me.walk(Some(Direction::West));
+        match me.get_orientation() {
+            Direction::East | Direction::West => {
+                if abs_diff_x > abs_diff_y/2.0 {
+                    if vector.x.is_sign_positive() {
+                        me.walk(Some(Direction::East));
+                    } else {
+                        me.walk(Some(Direction::West));
+                    }
+                } else {
+                    if vector.y.is_sign_positive() {
+                        me.walk(Some(Direction::North));
+                    } else {
+                        me.walk(Some(Direction::South));
+                    }
+                }
             }
-        } else {
-            if vector.y.is_sign_positive() {
-                me.walk(Some(Direction::North));
-            } else {
-                me.walk(Some(Direction::South));
+            Direction::North | Direction::South => {
+                if abs_diff_x/2.0 > abs_diff_y {
+                    if vector.x.is_sign_positive() {
+                        me.walk(Some(Direction::East));
+                    } else {
+                        me.walk(Some(Direction::West));
+                    }
+                } else {
+                    if vector.y.is_sign_positive() {
+                        me.walk(Some(Direction::North));
+                    } else {
+                        me.walk(Some(Direction::South));
+                    }
+                }
             }
         }
         VisitResult::Running
