@@ -136,6 +136,10 @@ impl Entity {
         self.data.orientation
     }
 
+    pub fn get_type(&self) -> &EntityType {
+        &self.data.player
+    }
+
     pub fn walk(&mut self, orientation: Option<Direction>) {
         match orientation {
             Some(o) => {

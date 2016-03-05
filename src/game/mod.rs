@@ -9,8 +9,8 @@ use mio::tcp::TcpListener;
 use instance::Instance;
 use actor::{NetworkActor,ActorId};
 use id::Id;
-use data::Map;
-use entity::Entity;
+use data::{Player,Map};
+use entity::{Entity,EntityType};
 use messages::{Command,Request,NetworkNotification};
 use network::Message;
 use scripts::{AaribaScripts,BehaviourTrees};
@@ -40,7 +40,7 @@ pub struct GameParameters {
 
 pub struct Game {
     instances: HashMap<Id<Map>, HashMap<Id<Instance>, Sender<Command>>>,
-    actors_positions: HashMap<ActorId, Id<Instance>>,
+    player_positions: HashMap<Id<Player>, Id<Instance>>,
     server: TcpListener,
     resource_manager: ResourceManager,
     arriving_clients: ArrivingClientManager,
@@ -58,7 +58,7 @@ impl Game {
         ) -> Game {
         Game {
             instances: HashMap::new(),
-            actors_positions: HashMap::new(),
+            player_positions: HashMap::new(),
             server: server,
             resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS),
             arriving_clients: ArrivingClientManager::new(),
@@ -106,6 +106,12 @@ impl Game {
             Request::UnregisteredActor{actor,entities} => {
                 debug!("Unregistered {} {:?}", actor, entities);
                 // TODO: Store it or change its map ...
+
+                for entity in entities {
+                    if let EntityType::Player(ref player) = *entity.get_type() {
+                        self.player_positions.remove(&player.get_id());
+                    }
+                }
             }
             Request::InstanceShuttingDown(state) => {
                 debug!("Instance {} shutting down. State {:?}", state.id, state);
@@ -150,6 +156,14 @@ impl Game {
             }
             None => {
                 error!("Trying to access nonexisting map {}", map);
+            }
+        }
+    }
+
+    fn track_player(&mut self, entities: &[Entity], instance: Id<Instance>) {
+        for entity in entities {
+            if let EntityType::Player(ref player) = *entity.get_type() {
+                self.player_positions.insert(player.get_id(), instance);
             }
         }
     }
