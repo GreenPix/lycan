@@ -66,6 +66,7 @@ pub enum Request {
         entities: Vec<Entity>,
     },
     InstanceShuttingDown(ShuttingDownState),
+    JobFinished(usize),
 }
 
 impl Request {

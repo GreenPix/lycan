@@ -2,6 +2,7 @@ use std::net::{self,SocketAddr};
 use std::collections::HashMap;
 use std::thread;
 use std::io;
+use std::boxed::FnBox;
 
 use mio::*;
 use mio::tcp::TcpListener;
@@ -15,7 +16,7 @@ use messages::{Command,Request,NetworkNotification};
 use network::Message;
 use scripts::{AaribaScripts,BehaviourTrees};
 
-use self::resource_manager::ResourceManager;
+use self::resource_manager::{Error,ResourceManager};
 use self::arriving_client::ArrivingClientManager;
 
 mod authentication;
@@ -44,6 +45,7 @@ pub struct Game {
     server: TcpListener,
     resource_manager: ResourceManager,
     arriving_clients: ArrivingClientManager,
+    callbacks: Callbacks,
 
     // TODO: Should this be integrated with the resource manager?
     scripts: AaribaScripts,
@@ -55,20 +57,21 @@ impl Game {
         server: TcpListener,
         scripts: AaribaScripts,
         trees: BehaviourTrees,
+        sender: Sender<Request>,
         ) -> Game {
         Game {
             instances: HashMap::new(),
             player_positions: HashMap::new(),
             server: server,
-            resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS),
+            resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS, sender),
             arriving_clients: ArrivingClientManager::new(),
+            callbacks: Callbacks::new(),
             scripts: scripts,
             trees: trees,
         }
     }
 
     pub fn spawn_game(parameters: GameParameters) -> Result<Sender<Request>,io::Error> {
-        // Those items are now deprecated in libstd, but mio still uses them
         let ip = net::IpAddr::V4(Ipv4Addr::new(0,0,0,0));
         let addr = SocketAddr::new(ip,parameters.port);
         let server = try!(TcpListener::bind(&addr));
@@ -80,7 +83,7 @@ impl Game {
         let mut event_loop = try!(EventLoop::new());
         try!(event_loop.register(&server, SERVER, EventSet::all(), PollOpt::level()));
         let sender = event_loop.channel();
-        let mut game = Game::new(server, scripts, behaviour_trees);
+        let mut game = Game::new(server, scripts, behaviour_trees, sender.clone());
 
         // XXX: Hacks
         let fake_tokens = authentication::generate_fake_authtok();
@@ -116,6 +119,12 @@ impl Game {
             Request::InstanceShuttingDown(state) => {
                 debug!("Instance {} shutting down. State {:?}", state.id, state);
                 // TODO: Do something?
+            }
+            Request::JobFinished(job) => {
+                let callbacks = self.callbacks.get_callbacks(job);
+                for cb in callbacks {
+                    cb.call_box((event_loop, self));
+                }
             }
         }
     }
@@ -167,6 +176,27 @@ impl Game {
             }
         }
     }
+
+    fn player_ready(&mut self, event_loop: &mut EventLoop<Self>,  mut actor: NetworkActor, id: Id<Player>) {
+        match self.resource_manager.retrieve_player(id) {
+            Ok(entity) => {
+                let map = entity.get_map_position().unwrap();
+                actor.register_entity(entity.get_id());
+                let notification = NetworkNotification::this_is_you(entity.get_id().as_u64());
+                actor.queue_message(Message::new(notification));
+                self.assign_actor_to_map(event_loop, map, actor, vec![entity]);
+            }
+            Err(Error::Processing(job)) => {
+                self.callbacks.add(job, move |event_loop, game| {
+                    game.player_ready(event_loop, actor, id);
+                });
+            }
+            Err(Error::NotFound) => {
+                //TODO
+                unimplemented!();
+            }
+        }
+    }
 }
 
 impl Handler for Game {
@@ -193,19 +223,7 @@ impl Handler for Game {
             }
             _token => {
                 if let Some((mut actor, id)) = self.arriving_clients.ready(event_loop, token, event) {
-                    match self.resource_manager.retrieve_player(id) {
-                        Err(_e) => {
-                            //TODO
-                            unimplemented!();
-                        }
-                        Ok(entity) => {
-                            let map = entity.get_map_position().unwrap();
-                            actor.register_entity(entity.get_id());
-                            let notification = NetworkNotification::this_is_you(entity.get_id().as_u64());
-                            actor.queue_message(Message::new(notification));
-                            self.assign_actor_to_map(event_loop, map, actor, vec![entity]);
-                        }
-                    }
+                    self.player_ready(event_loop, actor, id);
                 }
             }
         }
@@ -213,5 +231,32 @@ impl Handler for Game {
 
     fn notify(&mut self, event_loop: &mut EventLoop<Self>, msg: Request) {
         self.apply(event_loop, msg);
+    }
+}
+
+type Callback = Box<FnBox(&mut EventLoop<Game>, &mut Game) + Send>;
+
+struct Callbacks {
+    callbacks: HashMap<usize, Vec<Callback>>,
+}
+
+impl Callbacks {
+    fn new() -> Callbacks {
+        Callbacks {
+            callbacks: HashMap::new(),
+        }
+    }
+
+    fn add<F>(&mut self, job: usize, cb: F)
+    where F: FnOnce(&mut EventLoop<Game>, &mut Game) + 'static + Send {
+        self.add_callback_inner(job, Box::new(cb))
+    }
+
+    fn add_callback_inner(&mut self, job: usize, cb: Callback) {
+        self.callbacks.entry(job).or_insert(Vec::new()).push(cb);
+    }
+
+    fn get_callbacks(&mut self, job: usize) -> Vec<Callback> {
+        self.callbacks.remove(&job).unwrap_or(Vec::new())
     }
 }

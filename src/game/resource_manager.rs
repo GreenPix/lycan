@@ -5,21 +5,27 @@ use std::fmt;
 use std::hash::Hash;
 
 use threadpool::ThreadPool;
+use mio::Sender as MioSender;
 
 use id::Id;
 use data::{Map,Player};
 use entity::Entity;
+use game::Game;
+use messages::Request;
 
 pub struct ResourceManager {
     maps: ResourceManagerInner<Map,Arc<Map>>,
     players: ResourceManagerInner<Player,Entity>,
+    requests: MioSender<Request>,
     pool: ThreadPool,
+    job: usize,
 }
 
 struct ResourceManagerInner<T,U> {
     resources: HashMap<Id<T>, U>,
     errors: HashMap<Id<T>, Error>,
     jobs: CurrentJobs<T>,
+    requests: MioSender<Request>,
 
     // XXX: Maybe a sync receiver would be better here
     tx: Sender  <(Id<T>, Result<U, Error>)>,
@@ -30,30 +36,33 @@ impl <T,U> ResourceManagerInner<T,U>
 where U: RetreiveFromId<T>,
       U: Send + 'static,
       T: 'static {
-    fn new() -> ResourceManagerInner<T,U> {
+    fn new(requests: MioSender<Request>) -> ResourceManagerInner<T,U> {
         let (tx, rx) = mpsc::channel();
         ResourceManagerInner {
             resources: HashMap::new(),
             errors: HashMap::new(),
             jobs: CurrentJobs::new(),
+            requests: requests,
 
             tx: tx,
             rx: rx,
         }
     }
 
-    fn load(&mut self, id: Id<T>, pool: &ThreadPool) {
+    fn load(&mut self, id: Id<T>, pool: &ThreadPool, job: usize) {
         self.process_inputs();
         if self.resources.get(&id).is_none() &&
             self.errors.get(&id).is_none() &&
             !self.jobs.contains(id) {
-                self.jobs.push(id);
+                self.jobs.push(id, job);
+                let sender = self.requests.clone();
                 let tx = self.tx.clone();
                 pool.execute(move || {
                     // TODO: fetch the resource on the disk
                     let fetched = U::retrieve(id);
 
                     tx.send((id, fetched)).unwrap();
+                    sender.send(Request::JobFinished(job));
                 });
         }
     }
@@ -74,15 +83,16 @@ where U: RetreiveFromId<T>,
         }
     }
 
-    fn retrieve(&mut self, id: Id<T>, pool: &ThreadPool) -> Result<U, Error> {
+    fn retrieve(&mut self, id: Id<T>, pool: &ThreadPool, job: usize) -> Result<U, Error> {
         self.process_inputs();
+
         // We already have it
         if let Some(data) =  self.resources.remove(&id) {
             return Ok(data);
         }
 
-        if self.jobs.contains(id) {
-            return Err(Error::Processing);
+        if let Some(job) = self.jobs.get(id) {
+            return Err(Error::Processing(job));
         }
 
         if let Some(error) = self.errors.get(&id) {
@@ -90,8 +100,8 @@ where U: RetreiveFromId<T>,
         }
 
         // We don't have it, not processing and no errors ... we fetch it
-        self.load(id, pool);
-        Err(Error::Processing)
+        self.load(id, pool, job);
+        Err(Error::Processing(job))
     }
 }
 
@@ -99,15 +109,15 @@ impl <T,U> ResourceManagerInner<T,U>
 where U: RetreiveFromId<T>,
       U: Send + Clone + 'static,
       T: 'static {
-    fn get(&mut self, id: Id<T>, pool: &ThreadPool) -> Result<U, Error> {
+    fn get(&mut self, id: Id<T>, pool: &ThreadPool, job: usize) -> Result<U, Error> {
         self.process_inputs();
         // We already have it
         if let Some(data) =  self.resources.get(&id) {
             return Ok(data.clone());
         }
 
-        if self.jobs.contains(id) {
-            return Err(Error::Processing);
+        if let Some(job) = self.jobs.get(id) {
+            return Err(Error::Processing(job));
         }
 
         if let Some(error) = self.errors.get(&id) {
@@ -115,34 +125,46 @@ where U: RetreiveFromId<T>,
         }
 
         // We don't have it, not processing and no errors ... we fetch it
-        self.load(id, pool);
-        Err(Error::Processing)
+        self.load(id, pool, job);
+        Err(Error::Processing(job))
     }
 }
 
 impl ResourceManager {
-    pub fn new(threads: usize) -> ResourceManager {
+    pub fn new(threads: usize, requests: MioSender<Request>) -> ResourceManager {
         ResourceManager {
-            maps: ResourceManagerInner::new(),
-            players: ResourceManagerInner::new(),
+            maps: ResourceManagerInner::new(requests.clone()),
+            players: ResourceManagerInner::new(requests.clone()),
             pool: ThreadPool::new(threads),
+            requests: requests,
+            job: 0,
         }
     }
 
     pub fn load_map(&mut self, map: Id<Map>) {
-        self.maps.load(map, &self.pool);
+        let job = self.job;
+        self.job += 1;
+        self.maps.load(map, &self.pool, job);
     }
 
     pub fn get_map(&mut self, map: Id<Map>) -> Result<Arc<Map>, Error> {
-        self.maps.get(map, &self.pool)
+        let job = self.job;
+        self.job += 1;
+        self.maps.get(map, &self.pool, job)
     }
 
     pub fn load_player(&mut self, player: Id<Player>) {
-        self.players.load(player, &self.pool);
+        let job = self.job;
+        self.job += 1;
+        self.players.load(player, &self.pool, job);
     }
 
-    pub fn retrieve_player(&mut self, player: Id<Player>) -> Result<Entity, Error> {
-        self.players.retrieve(player, &self.pool)
+    pub fn retrieve_player(&mut self,
+                           player: Id<Player>,
+                          ) -> Result<Entity, Error> {
+        let job = self.job;
+        self.job += 1;
+        self.players.retrieve(player, &self.pool, job)
     }
 }
 
@@ -153,23 +175,27 @@ enum Data {
 
 #[derive(Debug)]
 struct CurrentJobs<T> {
-    inner: Vec<Id<T>>,
+    inner: HashMap<Id<T>,usize>,
 }
 
 impl <T> CurrentJobs<T> {
     fn new() -> CurrentJobs<T> {
         CurrentJobs {
-            inner: Vec::new(),
+            inner: HashMap::new(),
         }
     }
 
     fn contains(&self, id: Id<T>) -> bool {
-        self.inner.contains(&id)
+        self.inner.contains_key(&id)
     }
 
-    fn push(&mut self, id: Id<T>) -> bool {
-        if !self.inner.contains(&id) {
-            self.inner.push(id);
+    fn get(&self, id: Id<T>) -> Option<usize> {
+        self.inner.get(&id).cloned()
+    }
+
+    fn push(&mut self, id: Id<T>, job: usize) -> bool {
+        if !self.inner.contains_key(&id) {
+            self.inner.insert(id, job);
             true
         } else {
             false
@@ -177,12 +203,7 @@ impl <T> CurrentJobs<T> {
     }
 
     fn remove(&mut self, id: Id<T>) {
-        match self.inner.iter().position(|a| *a == id) {
-            None => error!("Trying to remove a non-existing id {}", id),
-            Some(pos) => {
-                self.inner.swap_remove(pos);
-            }
-        }
+        self.inner.remove(&id);
     }
 }
 
@@ -212,7 +233,7 @@ pub trait RetreiveFromId<T=Self> {
 
 #[derive(Debug,Clone,Copy)]
 pub enum Error {
-    Processing,
+    Processing(usize),
     NotFound,
 }
 
