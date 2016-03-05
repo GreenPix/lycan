@@ -13,7 +13,7 @@ use data::Map;
 use entity::Entity;
 use messages::{Command,Request,NetworkNotification};
 use network::Message;
-use scripts::AaribaScripts;
+use scripts::{AaribaScripts,BehaviourTrees};
 
 use self::resource_manager::ResourceManager;
 use self::arriving_client::ArrivingClientManager;
@@ -47,10 +47,15 @@ pub struct Game {
 
     // TODO: Should this be integrated with the resource manager?
     scripts: AaribaScripts,
+    trees: BehaviourTrees,
 }
 
 impl Game {
-    fn new(server: TcpListener, scripts: AaribaScripts) -> Game {
+    fn new(
+        server: TcpListener,
+        scripts: AaribaScripts,
+        trees: BehaviourTrees,
+        ) -> Game {
         Game {
             instances: HashMap::new(),
             actors_positions: HashMap::new(),
@@ -58,6 +63,7 @@ impl Game {
             resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS),
             arriving_clients: ArrivingClientManager::new(),
             scripts: scripts,
+            trees: trees,
         }
     }
 
@@ -69,11 +75,12 @@ impl Game {
 
         // XXX: AN UNWRAP -> to solve when we got time
         let scripts = AaribaScripts::get_from_url(&parameters.configuration_url).unwrap();
+        let behaviour_trees = BehaviourTrees::get_from_url(&parameters.configuration_url).unwrap();
 
         let mut event_loop = try!(EventLoop::new());
         try!(event_loop.register(&server, SERVER, EventSet::all(), PollOpt::level()));
         let sender = event_loop.channel();
-        let mut game = Game::new(server, scripts);
+        let mut game = Game::new(server, scripts, behaviour_trees);
 
         // XXX: Hacks
         let fake_tokens = authentication::generate_fake_authtok();
@@ -108,22 +115,30 @@ impl Game {
     }
 
     // Spawn a new instance if needed
-    fn assign_actor_to_map(&mut self, event_loop: &mut EventLoop<Self>, map: Id<Map>, actor: NetworkActor) {
+    fn assign_actor_to_map(
+        &mut self,
+        event_loop: &mut EventLoop<Self>,
+        map: Id<Map>,
+        actor: NetworkActor,
+        entities: Vec<Entity>,
+        ) {
         match self.instances.get_mut(&map) {
             Some(instances) => {
                 // TODO: Load balancing
                 let register_new_instance = match instances.iter_mut().nth(0) {
                     Some((_id, instance)) => {
                         // An instance is already there, send the actor to it
-                        instance.send(Command::NewClient(actor)).unwrap();
+                        instance.send(Command::NewClient(actor,entities)).unwrap();
                         None
                     }
                     None => {
                         // No instance for this map, spawn one
                         let (id, instance) = Instance::spawn_instance(
                             event_loop.channel(),
-                            self.scripts.clone());
-                        instance.send(Command::NewClient(actor)).unwrap();
+                            self.scripts.clone(),
+                            self.trees.clone(),
+                            );
+                        instance.send(Command::NewClient(actor,entities)).unwrap();
                         Some((id, instance))
                     }
                 };
@@ -174,8 +189,7 @@ impl Handler for Game {
                             actor.register_entity(entity.get_id());
                             let notification = NetworkNotification::this_is_you(entity.get_id().as_u64());
                             actor.queue_message(Message::new(notification));
-                            actor.push_entity(entity);
-                            self.assign_actor_to_map(event_loop, map, actor);
+                            self.assign_actor_to_map(event_loop, map, actor, vec![entity]);
                         }
                     }
                 }

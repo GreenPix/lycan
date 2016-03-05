@@ -25,7 +25,7 @@ mod conversions;
 
 #[derive(Debug)]
 pub enum Command {
-    NewClient(NetworkActor),
+    NewClient(NetworkActor,Vec<Entity>),
     Shutdown,
     Arbitrary(Arbitrary<Instance>),
     UnregisterActor(ActorId),

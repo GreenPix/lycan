@@ -16,7 +16,7 @@ mod update;
 pub use self::update::update;
 pub use lycan_serialize::Order;
 
-use lycan_serialize::Direction;
+pub use lycan_serialize::Direction;
 
 static DEFAULT_SPEED: f32 = 10.0;
 
@@ -40,7 +40,7 @@ struct EntityData {
     stats: Stats,
 
     // TODO: Replace by a FSM
-    walk: bool,
+    walking: bool,
     attacking: u64, // XXX: This is currently expressed in tick, not ms!
 }
 
@@ -61,7 +61,7 @@ impl EntityData {
                 skin: rand::random(),
                 pv: pv,
 
-                walk: false,
+                walking: false,
                 attacking: 0,
             }
         }
@@ -126,6 +126,22 @@ impl Entity {
         self.data.pv
     }
 
+    pub fn get_orientation(&self) -> Direction {
+        self.data.orientation
+    }
+
+    pub fn walk(&mut self, orientation: Option<Direction>) {
+        match orientation {
+            Some(o) => {
+                self.data.walking = true;
+                self.data.orientation = o;
+            }
+            None => {
+                self.data.walking = false;
+            }
+        }
+    }
+
     // TODO: Remove
     pub fn fake_player(id: Id<Player>) -> Entity {
         let player =  match id.as_u64() {
@@ -148,6 +164,15 @@ impl Entity {
                     Direction::North,
                     Stats{speed: DEFAULT_SPEED},
                     100)
+    }
+
+    pub fn fake_ai() -> Entity {
+        Entity::new(
+            EntityType::Invoked(None),
+            Pnt2::new(1.0, 1.0),
+            Direction::South,
+            Stats{speed: 7.0},
+            100)
     }
 
     pub fn dump(&self, f: &mut Formatter, indent: &str) -> Result<(),fmt::Error> {
@@ -300,9 +325,15 @@ impl <'a> Wrapper<'a> {
 
     // XXX: We should probably have a &self version
     pub fn get_position(&mut self, id: Id<Entity>) -> Option<usize> {
+        let borrowed = self.borrowed_entity_position;
         for (position, entity) in self.iter().enumerate() {
             if entity.get_id() == id {
-                return Some(position);
+                let adjusted_position = if position >= borrowed {
+                    position + 1
+                } else {
+                    position
+                };
+                return Some(adjusted_position);
             }
         }
         None
