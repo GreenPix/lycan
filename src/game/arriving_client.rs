@@ -22,7 +22,7 @@ impl ConvertTo<NetworkActor> for ArrivingClient {}
 #[derive(Debug)]
 pub struct ArrivingClientManager {
     clients: HashMap<Id<ArrivingClient>, ArrivingClient>,
-    tokens: HashMap<AuthenticationToken, Id<Player>>,
+    tokens: HashMap<Id<Player>, AuthenticationToken>,
 }
 
 impl ArrivingClientManager {
@@ -49,7 +49,7 @@ impl ArrivingClientManager {
     }
 
     pub fn new_auth_tok(&mut self, tok: AuthenticationToken, id: Id<Player>) {
-        self.tokens.insert(tok, id);
+        self.tokens.insert(id, tok);
     }
 
     pub fn ready<H: Handler>(&mut self,
@@ -78,8 +78,8 @@ impl ArrivingClientManager {
                     self.clients.remove(&id_u64);
                     return None;
                 }
-                ArrivingClientAction::VerifyToken(auth_token) => {
-                    match self.tokens.remove(&auth_token) {
+                ArrivingClientAction::VerifyToken(player_id, auth_token) => {
+                    match self.tokens.remove(&player_id) {
                         None => {
                             error!("No corresponding token for client {}", token.as_usize());
                             // TODO: Insert a number of retries
@@ -87,20 +87,28 @@ impl ArrivingClientManager {
                             let response = NetworkNotification::response(ErrorCode::Error);
                             client.send_message(event_loop, Message::new(response));
                         }
-                        Some(player) => {
-                            trace!("Token verified for client {}", token.as_usize());
-                            let mut entry = match self.clients.entry(id) {
-                                Entry::Occupied(e) => e,
-                                _ => unreachable!(),
-                            };
-                            if entry.get_mut().set_player_id(player) {
-                                // The client is ready, we can return him
-                                trace!("Sending response to client {}", token.as_usize());
-                                let response = NetworkNotification::response(ErrorCode::Success);
-                                entry.get_mut().send_message(event_loop, Message::new(response));
-                                let client = entry.remove();
-                                client.deregister(event_loop);
-                                return Some((client.into(),player));
+                        Some(token) => {
+                            if token == auth_token {
+                                trace!("Token verified for client {}", id_u64);
+                                let mut entry = match self.clients.entry(id) {
+                                    Entry::Occupied(e) => e,
+                                    _ => unreachable!(),
+                                };
+                                let id = Id::forge(player_id);
+                                if entry.get_mut().set_player_id(id) {
+                                    // The client is ready, we can return him
+                                    trace!("Sending response to client {}", id_u64);
+                                    let response = NetworkNotification::response(ErrorCode::Success);
+                                    entry.get_mut().send_message(event_loop, Message::new(response));
+                                    let client = entry.remove();
+                                    client.deregister(event_loop);
+                                    return Some((client.into(), id));
+                                }
+                            } else {
+                                warn!("Invalid token for player {}", id);
+                                let mut client = self.clients.get_mut(&id_u64).unwrap();
+                                let response = NetworkNotification::response(ErrorCode::Error);
+                                client.send_message(event_loop, Message::new(response));
                             }
                         }
                     }
@@ -153,9 +161,9 @@ impl ArrivingClient {
                 for message in messages.into_iter() {
                     match message {
                         NetworkCommand::GameCommand(
-                            NetworkGameCommand::Authenticate(authentication_token)) => {
+                            NetworkGameCommand::Authenticate(id_player, authentication_token)) => {
                             trace!("Pushing authentication token");
-                            res.push(ArrivingClientAction::VerifyToken(authentication_token));
+                            res.push(ArrivingClientAction::VerifyToken(id_player, authentication_token));
                         }
                         _ => {
                             warn!("Client {} tried to send a command before authenticating",
@@ -213,7 +221,7 @@ impl ArrivingClient {
 #[derive(Debug)]
 enum ArrivingClientAction {
     Remove,
-    VerifyToken(AuthenticationToken),
+    VerifyToken(u64, AuthenticationToken),
 }
 
 #[derive(Debug)]

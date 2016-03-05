@@ -88,7 +88,6 @@ impl Game {
         // XXX: Hacks
         let fake_tokens = authentication::generate_fake_authtok();
         for (tok, id) in fake_tokens {
-            game.resource_manager.load_player(id);
             game.arriving_clients.new_auth_tok(tok, id);
         }
         game.instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
