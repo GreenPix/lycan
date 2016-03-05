@@ -1,5 +1,4 @@
 #![feature(fnbox)]
-#![feature(ip_addr)]
 
 #![allow(unused_imports)]
 #![allow(dead_code)]
