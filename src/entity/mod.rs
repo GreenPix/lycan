@@ -1,5 +1,6 @@
 use std::fmt::{self,Formatter};
 use std::cell::{RefCell,RefMut,Ref};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::marker;
 
 use nalgebra::{Pnt2,Vec2};
@@ -44,6 +45,10 @@ struct EntityData {
     attacking: u64, // XXX: This is currently expressed in tick, not ms!
 }
 
+lazy_static! {
+    static ref NEXT_SKIN: AtomicUsize = AtomicUsize::new(0);
+}
+
 impl EntityData {
     pub fn new(player: EntityType,
                position: Pnt2<f32>,
@@ -52,13 +57,14 @@ impl EntityData {
                pv: u64,
                )
         -> EntityData {
+            let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
             EntityData {
                 player: player,
                 position: position,
                 speed: Vec2::new(0.0,0.0),
                 orientation: orientation,
                 stats: stats,
-                skin: rand::random(),
+                skin: skin,
                 pv: pv,
 
                 walking: false,
