@@ -98,17 +98,18 @@ impl Entity {
                         others: &mut Wrapper,
                         scripts: &AaribaScripts,
                         ) {
+        // TODO: Broad phase first?
 
         if self.data.attacking == 30 {
-            // TODO ... do some actual collisions ...
-            // Right now attacks ALL entities in the map
             for entity in others.iter() {
-                let mut integration = AaribaIntegration::new(entity);
-                match scripts.combat.evaluate(&mut integration) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        error!("Script error: {:#?}", e);
-                        continue;
+                if attack_success(self, entity) {
+                    let mut integration = AaribaIntegration::new(entity);
+                    match scripts.combat.evaluate(&mut integration) {
+                        Ok(()) => {}
+                        Err(e) => {
+                            error!("Script error: {:#?}", e);
+                            continue;
+                        }
                     }
                 }
             }
@@ -130,6 +131,33 @@ impl Entity {
         self.data.position = new_position;
         self.data.speed = speed;
     }
+}
+
+fn attack_success(attacker: &Entity, target: &Entity) -> bool {
+    let target_box = target.data.hitbox;
+    let target_position = target.data.position;
+    let attack_box;
+    let attack_position;
+    match attacker.get_orientation() {
+        Direction::North => {
+            attack_box = attacker.data.attack_box.rotated();
+            attack_position = attacker.data.position + attacker.data.attack_offset_y;
+        }
+        Direction::South => {
+            attack_box = attacker.data.attack_box.rotated();
+            attack_position = attacker.data.position - attacker.data.attack_offset_y;
+        }
+        Direction::East => {
+            attack_box = attacker.data.attack_box;
+            attack_position = attacker.data.position + attacker.data.attack_offset_x;
+        }
+        Direction::West => {
+            attack_box = attacker.data.attack_box;
+            attack_position = attacker.data.position - attacker.data.attack_offset_x;
+        }
+    }
+
+    attack_box.collision(attack_position, &target_box, target_position)
 }
 
 // Does it still make sense to have a separate type?

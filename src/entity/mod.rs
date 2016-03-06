@@ -9,9 +9,11 @@ use rand;
 use id::{Id,HasForgeableId};
 use data::{Map,Player};
 use messages::{EntityState};
+use self::hitbox::RectangleHitbox;
 
 mod status;
 mod update;
+mod hitbox;
 //mod serialize;
 
 pub use self::update::update;
@@ -37,7 +39,10 @@ struct EntityData {
     orientation: Direction,
     skin: u64,
     pv: u64,
-    // Hitbox
+    hitbox: RectangleHitbox,
+    attack_box: RectangleHitbox,
+    attack_offset_x: Vec2<f32>,
+    attack_offset_y: Vec2<f32>,
     stats: Stats,
 
     // TODO: Replace by a FSM
@@ -66,6 +71,10 @@ impl EntityData {
                 stats: stats,
                 skin: skin,
                 pv: pv,
+                hitbox: RectangleHitbox::new_default(),
+                attack_box: RectangleHitbox::new(0.5, 0.5),
+                attack_offset_x: Vec2::new(0.75, 0.0),
+                attack_offset_y: Vec2::new(0.0, 1.0),
 
                 walking: false,
                 attacking: 0,
