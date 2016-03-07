@@ -1,11 +1,9 @@
 // Aariba scripts and behaviour trees used by Lycan
-use std::io::Read;
 use std::collections::HashMap;
 
 use aariba::rules::RulesEvaluator;
 use aariba::parser;
 use aariba::parser::ParseError;
-use hyper::Client;
 use hyper::error::Error as HyperError;
 
 use behaviour_tree::tree::factory::TreeFactory;
@@ -13,6 +11,7 @@ use behaviour_tree::tree::{LeafNodeFactory,BehaviourTreeNode};
 use behaviour_tree;
 
 use ai::{Context,ActionNode,ActionNodeFactory,LeavesCollection};
+use utils;
 
 pub type BehaviourTreeFactory = TreeFactory<ActionNodeFactory>;
 pub type BehaviourTree = behaviour_tree::BehaviourTree<ActionNode>;
@@ -52,7 +51,7 @@ impl AaribaScripts {
         let mut url = String::from(base_url);
         url.push_str("/combat.aariba");
         debug!("Getting file {}", url);
-        let script = try!(get_file_from_url(&url));
+        let script = try!(utils::get_file_from_url(&url));
         let parsed_script = try!(parser::rules_evaluator(&script));
         let scripts = AaribaScripts {
             combat: parsed_script,
@@ -72,7 +71,7 @@ impl BehaviourTrees {
         let mut url = String::from(base_url);
         url.push_str("/zombie.bt");
         debug!("Getting file {}", url);
-        let script = try!(get_file_from_url(&url));
+        let script = try!(utils::get_file_from_url(&url));
         let mut map = HashMap::new();
         let leaves = LeavesCollection::standard();
         let parsed_trees = try!(behaviour_tree::parse(&script,&leaves));
@@ -94,15 +93,4 @@ impl BehaviourTrees {
     pub fn generate_tree(&self, name: &str) -> Option<BehaviourTree> {
         self.inner.get(name).map(|f| f.optimize())
     }
-}
-
-fn get_file_from_url(url: &str) -> Result<String,HyperError> {
-    let client = Client::new();
-    let mut response = try!(client.get(url).send());
-    if !response.status.is_success() {
-        return Err(HyperError::Status);
-    }
-    let mut content = String::new();
-    try!(response.read_to_string(&mut content));
-    Ok(content)
 }

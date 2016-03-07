@@ -22,6 +22,9 @@ smallvec = "0.1"
 rand = "0.3"
 hyper = "0.6.16"
 bytes = "0.3"
+serde = "0.7"
+serde_macros = "0.7"
+serde_json = "0.7"
 
 [dependencies.lycan-serialize]
 git = "https://github.com/Greenpix/lycan-serialize.git"

@@ -7,7 +7,7 @@ use nalgebra::{Pnt2,Vec2};
 use rand;
 
 use id::{Id,HasForgeableId};
-use data::{Map,Player};
+use data::{Map,Player,Stats,Position};
 use messages::{EntityState};
 use self::hitbox::RectangleHitbox;
 
@@ -21,7 +21,8 @@ pub use lycan_serialize::Order;
 
 pub use lycan_serialize::Direction;
 
-static DEFAULT_SPEED: f32 = 10.0;
+static DEFAULT_SPEED:    f32 = 10.0;
+static DEFAULT_AI_SPEED: f32 = 5.0;
 
 #[derive(Debug)]
 pub struct Entity {
@@ -43,7 +44,8 @@ struct EntityData {
     attack_box: RectangleHitbox,
     attack_offset_x: Vec2<f32>,
     attack_offset_y: Vec2<f32>,
-    stats: Stats,
+    base_stats: Stats,
+    stats: CurrentStats,
 
     // TODO: Replace by a FSM
     walking: bool,
@@ -58,17 +60,18 @@ impl EntityData {
     pub fn new(player: EntityType,
                position: Pnt2<f32>,
                orientation: Direction,
-               stats: Stats,
+               skin: u64,
+               base_stats: Stats,
                pv: u64,
                )
         -> EntityData {
-            let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
             EntityData {
                 player: player,
                 position: position,
                 speed: Vec2::new(0.0,0.0),
                 orientation: orientation,
-                stats: stats,
+                base_stats: base_stats,
+                stats: Default::default(),
                 skin: skin,
                 pv: pv,
                 hitbox: RectangleHitbox::new_default(),
@@ -86,9 +89,9 @@ impl EntityData {
             EntityType::Player(ref player) => {
                 try!(writeln!(f, "{}Player {} {} attached to map {}",
                               indent,
-                              player.get_id(),
-                              player.get_name(),
-                              player.get_map_position()));
+                              player.id,
+                              &player.name,
+                              player.map));
             }
             EntityType::Invoked(ref parent) => {
                 match *parent {
@@ -112,14 +115,18 @@ impl Entity {
         self.id
     }
 
-    pub fn new(player: EntityType,
-               position: Pnt2<f32>,
-               orientation: Direction,
-               stats: Stats,
-               pv: u64,
-               ) -> Entity {
-                   Entity::new_internal(
-                       EntityData::new(player, position, orientation, stats, pv))
+    pub fn new(
+        player: EntityType,
+        position: Pnt2<f32>,
+        orientation: Direction,
+        stats: Stats,
+        pv: u64,
+    ) -> Entity {
+        let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
+        let data = EntityData::new(player, position, orientation, skin, stats, pv);
+        let mut e = Entity::new_internal(data);
+        e.recompute_current_stats();
+        e
     }
 
     fn new_internal(data: EntityData) -> Entity {
@@ -149,6 +156,14 @@ impl Entity {
         &self.data.player
     }
 
+    pub fn recompute_current_stats(&mut self) {
+        let speed = match self.data.player {
+            EntityType::Player(_) => DEFAULT_SPEED,
+            EntityType::Invoked(_) => DEFAULT_AI_SPEED,
+        };
+        self.data.stats.speed = speed;
+    }
+
     pub fn walk(&mut self, orientation: Option<Direction>) {
         match orientation {
             Some(o) => {
@@ -163,34 +178,64 @@ impl Entity {
 
     // TODO: Remove
     pub fn fake_player(id: Id<Player>) -> Entity {
-        let player =  match id.as_u64() {
+        let stats = Stats {
+            level:          1,
+            strength:       2,
+            dexterity:      3,
+            constitution:   4,
+            intelligence:   5,
+            precision:      6,
+            wisdom:         7,
+        };
+        let position = Position {
+            x: 0.0,
+            y: 0.0,
+            map: Id::forge(1)
+        };
+        let name =  match id.as_u64() {
             0 => {
-                Player::new(id, Id::forge(1), "Vaelden".to_string())
+                "Vaelden".to_owned()
             }
             1 => {
-                Player::new(id, Id::forge(1), "Cendrais".to_string())
+                "Cendrais".to_owned()
             }
             2 => {
-                Player::new(id, Id::forge(1), "Nemikolh".to_string())
+                "Nemikolh".to_owned()
             }
             _ => {
-                let name = format!("Player{}", id);
-                Player::new(id, Id::forge(1), name)
+                format!("Player{}", id)
             }
         };
-        Entity::new(EntityType::Player(player),
-                    Pnt2::new(0.0,0.0),
-                    Direction::North,
-                    Stats{speed: DEFAULT_SPEED},
-                    100)
+        let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
+        let player = Player {
+            id:         id,
+            name:       name,
+            skin:       skin,
+            current_pv: 100,
+            position:   position,
+            experience: 0,
+            gold:       0,
+            guild:      String::new(),
+            stats:      stats,
+        };
+        Entity::from(player)
     }
 
     pub fn fake_ai() -> Entity {
+        let stats = Stats {
+            level:          1,
+            strength:       2,
+            dexterity:      3,
+            constitution:   4,
+            intelligence:   5,
+            precision:      6,
+            wisdom:         7,
+        };
         Entity::new(
             EntityType::Invoked(None),
             Pnt2::new(1.0, 1.0),
             Direction::South,
-            Stats{speed: 7.0},
+            stats,
             100)
     }
 
@@ -205,7 +250,7 @@ impl Entity {
 
     pub fn get_map_position(&self) -> Option<Id<Map>> {
         match self.data.player {
-            EntityType::Player(ref player) => Some(player.get_map_position()),
+            EntityType::Player(ref player) => Some(player.map),
             _ => None,
         }
     }
@@ -214,15 +259,10 @@ impl Entity {
 #[derive(Debug)]
 pub enum EntityType {
     // An entity can be a player
-    Player(Player),
+    Player(PlayerData),
     // Or invoked, with an optional parent
     // XXX: Is the parent really useful?
     Invoked(Option<u64>),
-}
-
-#[derive(Debug,Default)]
-pub struct Stats {
-    speed: f32,
 }
 
 // Abstraction so that if we change the implementation it doesn't affect the rest
@@ -419,5 +459,70 @@ mod test {
                 assert!(wrapper.get(id).is_none());
             }
         }
+    }
+}
+
+#[derive(Debug,Clone,Default)]
+struct CurrentStats {
+    speed: f32,
+}
+
+#[derive(Debug,Clone)]
+pub struct PlayerData {
+    name: String,
+    id: Id<Player>,
+    map: Id<Map>,
+}
+
+impl PlayerData {
+    pub fn get_id(&self) -> Id<Player> {
+        self.id
+    }
+}
+
+impl From<Player> for Entity {
+    fn from(player: Player) -> Entity {
+        let data = EntityData::new(
+            EntityType::Player(PlayerData {
+                name: player.name,
+                id: player.id,
+                map: player.position.map,
+            }),
+            Pnt2::new(player.position.x, player.position.y),
+            Direction::East,   // TODO
+            player.skin,
+            player.stats,
+            player.current_pv,
+            );
+        let mut entity = Entity::new_internal(data);
+        entity.recompute_current_stats();
+        entity
+    }
+}
+
+impl Into<Option<Player>> for Entity {
+    fn into(self) -> Option<Player> {
+        let player_data = match self.data.player {
+            EntityType::Player(player) => player,
+            _ => return None,
+        };
+        let position = Position {
+            x: self.data.position.x,
+            y: self.data.position.y,
+            map: player_data.map,
+        };
+        let player = Player {
+            id: player_data.id,
+            name: player_data.name,
+            skin: self.data.skin,
+            current_pv: self.data.pv,
+            position: position,
+            experience: 0,
+            gold: 0,
+            guild: String::new(),
+            stats: self.data.base_stats,
+        };
+
+        Some(player)
     }
 }
