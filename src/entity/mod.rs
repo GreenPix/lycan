@@ -27,13 +27,8 @@ static DEFAULT_AI_SPEED: f32 = 5.0;
 #[derive(Debug)]
 pub struct Entity {
     id: Id<Entity>,
-    data: EntityData,
-}
 
-// Everything that we will save on disk
-#[derive(Debug)]
-struct EntityData {
-    player: EntityType,
+    e_type: EntityType,
     position: Pnt2<f32>,
     // We probably won't save the speed ...
     speed: Vec2<f32>,
@@ -56,17 +51,19 @@ lazy_static! {
     static ref NEXT_SKIN: AtomicUsize = AtomicUsize::new(0);
 }
 
-impl EntityData {
-    pub fn new(player: EntityType,
+impl Entity {
+    pub fn new(e_type: EntityType,
                position: Pnt2<f32>,
                orientation: Direction,
                skin: u64,
                base_stats: Stats,
                pv: u64,
                )
-        -> EntityData {
-            EntityData {
-                player: player,
+        -> Entity {
+            let mut e = Entity {
+                id: Id::new(),
+
+                e_type: e_type,
                 position: position,
                 speed: Vec2::new(0.0,0.0),
                 orientation: orientation,
@@ -81,97 +78,51 @@ impl EntityData {
 
                 walking: false,
                 attacking: 0,
-            }
+            };
+            e.recompute_current_stats();
+            e
         }
 
-    pub fn dump(&self, f: &mut Formatter, indent: &str) -> Result<(),fmt::Error> {
-        match self.player {
-            EntityType::Player(ref player) => {
-                try!(writeln!(f, "{}Player {} {} attached to map {}",
-                              indent,
-                              player.id,
-                              &player.name,
-                              player.map));
-            }
-            EntityType::Invoked(ref parent) => {
-                match *parent {
-                    Some(parent) => {
-                        try!(writeln!(f, "{}Invoked entity attached to {}", indent, parent));
-                    }
-                    None => {
-                        try!(writeln!(f, "{}Invoked entity", indent));
-                    }
-                }
-            }
-        }
-        // TODO: Presence ...
-        try!(writeln!(f, "{}{:?} {:?} {:?}", indent, self.position, self.speed,self.orientation));
-        writeln!(f, "{}PV: {}", indent, self.pv)
-    }
-}
-
-impl Entity {
     pub fn get_id(&self) -> Id<Self> {
         self.id
     }
 
-    pub fn new(
-        player: EntityType,
-        position: Pnt2<f32>,
-        orientation: Direction,
-        stats: Stats,
-        pv: u64,
-    ) -> Entity {
-        let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
-        let data = EntityData::new(player, position, orientation, skin, stats, pv);
-        let mut e = Entity::new_internal(data);
-        e.recompute_current_stats();
-        e
-    }
-
-    fn new_internal(data: EntityData) -> Entity {
-        Entity {
-            id: Id::new(),
-            data: data,
-        }
-    }
-
     pub fn get_position(&self) -> Pnt2<f32> {
-        self.data.position
+        self.position
     }
 
     pub fn get_skin(&self) -> u64 {
-        self.data.skin
+        self.skin
     }
 
     pub fn get_pv(&self) -> u64 {
-        self.data.pv
+        self.pv
     }
 
     pub fn get_orientation(&self) -> Direction {
-        self.data.orientation
+        self.orientation
     }
 
     pub fn get_type(&self) -> &EntityType {
-        &self.data.player
+        &self.e_type
     }
 
     pub fn recompute_current_stats(&mut self) {
-        let speed = match self.data.player {
+        let speed = match self.e_type {
             EntityType::Player(_) => DEFAULT_SPEED,
             EntityType::Invoked(_) => DEFAULT_AI_SPEED,
         };
-        self.data.stats.speed = speed;
+        self.stats.speed = speed;
     }
 
     pub fn walk(&mut self, orientation: Option<Direction>) {
         match orientation {
             Some(o) => {
-                self.data.walking = true;
-                self.data.orientation = o;
+                self.walking = true;
+                self.orientation = o;
             }
             None => {
-                self.data.walking = false;
+                self.walking = false;
             }
         }
     }
@@ -231,28 +182,51 @@ impl Entity {
             precision:      6,
             wisdom:         7,
         };
+        let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
         Entity::new(
             EntityType::Invoked(None),
             Pnt2::new(1.0, 1.0),
             Direction::South,
+            skin,
             stats,
             100)
     }
 
-    pub fn dump(&self, f: &mut Formatter, indent: &str) -> Result<(),fmt::Error> {
-        try!(writeln!(f, "{}Entity {}", indent, self.id));
-        self.data.dump(f, indent)
-    }
-
     pub fn to_entity_state(&self) -> EntityState {
-        EntityState::new(self.id, self.data.position, self.data.orientation)
+        EntityState::new(self.id, self.position, self.orientation)
     }
 
     pub fn get_map_position(&self) -> Option<Id<Map>> {
-        match self.data.player {
+        match self.e_type {
             EntityType::Player(ref player) => Some(player.map),
             _ => None,
         }
+    }
+
+    pub fn dump(&self, f: &mut Formatter, indent: &str) -> Result<(),fmt::Error> {
+        try!(writeln!(f, "{}Entity {}", indent, self.id));
+        match self.e_type {
+            EntityType::Player(ref player) => {
+                try!(writeln!(f, "{}Player {} {} attached to map {}",
+                              indent,
+                              player.id,
+                              &player.name,
+                              player.map));
+            }
+            EntityType::Invoked(ref parent) => {
+                match *parent {
+                    Some(parent) => {
+                        try!(writeln!(f, "{}Invoked entity attached to {}", indent, parent));
+                    }
+                    None => {
+                        try!(writeln!(f, "{}Invoked entity", indent));
+                    }
+                }
+            }
+        }
+        // TODO: Presence ...
+        try!(writeln!(f, "{}{:?} {:?} {:?}", indent, self.position, self.speed,self.orientation));
+        writeln!(f, "{}PV: {}", indent, self.pv)
     }
 }
 
@@ -482,7 +456,7 @@ impl PlayerData {
 
 impl From<Player> for Entity {
     fn from(player: Player) -> Entity {
-        let data = EntityData::new(
+        let mut entity = Entity::new(
             EntityType::Player(PlayerData {
                 name: player.name,
                 id: player.id,
@@ -494,7 +468,6 @@ impl From<Player> for Entity {
             player.stats,
             player.current_pv,
             );
-        let mut entity = Entity::new_internal(data);
         entity.recompute_current_stats();
         entity
     }
@@ -502,25 +475,25 @@ impl From<Player> for Entity {
 
 impl Into<Option<Player>> for Entity {
     fn into(self) -> Option<Player> {
-        let player_data = match self.data.player {
+        let player_data = match self.e_type {
             EntityType::Player(player) => player,
             _ => return None,
         };
         let position = Position {
-            x: self.data.position.x,
-            y: self.data.position.y,
+            x: self.position.x,
+            y: self.position.y,
             map: player_data.map,
         };
         let player = Player {
             id: player_data.id,
             name: player_data.name,
-            skin: self.data.skin,
-            current_pv: self.data.pv,
+            skin: self.skin,
+            current_pv: self.pv,
             position: position,
             experience: 0,
             gold: 0,
             guild: String::new(),
-            stats: self.data.base_stats,
+            stats: self.base_stats,
         };
 
         Some(player)

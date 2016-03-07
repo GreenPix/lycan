@@ -44,9 +44,9 @@ fn generate_position_updates(
     for entity in entities.iter() {
         let notif = Notification::position(
             entity.get_id().as_u64(),
-            entity.data.position,
-            entity.data.speed,
-            entity.data.pv,
+            entity.position,
+            entity.speed,
+            entity.pv,
             );
         notifications.push(notif);
     }
@@ -59,10 +59,10 @@ impl Entity {
         match order {
             Order::Walk(orientation) => {
                 match orientation {
-                    None => self.data.walking = false,
+                    None => self.walking = false,
                     Some(o) => {
-                        self.data.orientation = o;
-                        self.data.walking = true;
+                        self.orientation = o;
+                        self.walking = true;
                     }
                 }
                 Ok(Some(Notification::walk(self.id.as_u64(), orientation)))
@@ -72,8 +72,8 @@ impl Entity {
             }
             Order::Attack => {
                 // If the entity was already in the middle of an attack, ignore
-                if self.data.attacking == 0 {
-                    self.data.attacking = 60;
+                if self.attacking == 0 {
+                    self.attacking = 60;
  
                     // TODO: Attacking notification
                     Ok(None)
@@ -88,8 +88,8 @@ impl Entity {
     ///
     /// For example, we trigger updates of long lasting spells
     fn trigger_personal_effects(&mut self, _notifications: &mut Vec<Notification>) {
-        if self.data.attacking > 0 {
-            self.data.attacking -= 1;
+        if self.attacking > 0 {
+            self.attacking -= 1;
         }
     }
 
@@ -100,7 +100,7 @@ impl Entity {
                         ) {
         // TODO: Broad phase first?
 
-        if self.data.attacking == 30 {
+        if self.attacking == 30 {
             for entity in others.iter() {
                 if attack_success(self, entity) {
                     let mut integration = AaribaIntegration::new(entity);
@@ -116,8 +116,8 @@ impl Entity {
         }
 
         // Assume no collisions at the moment ...
-        let unitary_speed = if self.data.walking {
-            match self.data.orientation {
+        let unitary_speed = if self.walking {
+            match self.orientation {
                 Direction::North => Vec2::new(0.0, 1.0),
                 Direction::South => Vec2::new(0.0, -1.0),
                 Direction::East  => Vec2::new(1.0, 0.0),
@@ -126,34 +126,34 @@ impl Entity {
         } else {
             Vec2::new(0.0, 0.0)
         };
-        let speed = unitary_speed * self.data.stats.speed;
-        let new_position = self.data.position + (speed * *SEC_PER_UPDATE);
-        self.data.position = new_position;
-        self.data.speed = speed;
+        let speed = unitary_speed * self.stats.speed;
+        let new_position = self.position + (speed * *SEC_PER_UPDATE);
+        self.position = new_position;
+        self.speed = speed;
     }
 }
 
 fn attack_success(attacker: &Entity, target: &Entity) -> bool {
-    let target_box = target.data.hitbox;
-    let target_position = target.data.position;
+    let target_box = target.hitbox;
+    let target_position = target.position;
     let attack_box;
     let attack_position;
     match attacker.get_orientation() {
         Direction::North => {
-            attack_box = attacker.data.attack_box.rotated();
-            attack_position = attacker.data.position + attacker.data.attack_offset_y;
+            attack_box = attacker.attack_box.rotated();
+            attack_position = attacker.position + attacker.attack_offset_y;
         }
         Direction::South => {
-            attack_box = attacker.data.attack_box.rotated();
-            attack_position = attacker.data.position - attacker.data.attack_offset_y;
+            attack_box = attacker.attack_box.rotated();
+            attack_position = attacker.position - attacker.attack_offset_y;
         }
         Direction::East => {
-            attack_box = attacker.data.attack_box;
-            attack_position = attacker.data.position + attacker.data.attack_offset_x;
+            attack_box = attacker.attack_box;
+            attack_position = attacker.position + attacker.attack_offset_x;
         }
         Direction::West => {
-            attack_box = attacker.data.attack_box;
-            attack_position = attacker.data.position - attacker.data.attack_offset_x;
+            attack_box = attacker.attack_box;
+            attack_position = attacker.position - attacker.attack_offset_x;
         }
     }
 
@@ -170,15 +170,15 @@ struct AaribaIntegration<'a> {
 impl <'a> Store for AaribaIntegration<'a> {
     fn get_attribute(&self, var: &str) -> Option<f64> {
         match var {
-            "pv" => Some(self.target.data.pv as f64),
+            "pv" => Some(self.target.pv as f64),
             _ => None,
         }
     }
     fn set_attribute(&mut self, var: &str, value: f64) -> Result<Option<f64>,()> {
         match var {
             "pv" => {
-                let old = self.target.data.pv as f64;
-                self.target.data.pv = value as u64;
+                let old = self.target.pv as f64;
+                self.target.pv = value as u64;
                 Ok(Some(old))
             }
             _ => Err(()),
