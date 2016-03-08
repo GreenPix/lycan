@@ -170,6 +170,13 @@ impl <'a> Store for &'a mut Entity {
     fn get_attribute(&self, var: &str) -> Option<f64> {
         match var {
             "pv" => Some(self.pv as f64),
+            "strength" => Some(self.stats.strength as f64),
+            "dexterity" => Some(self.stats.dexterity as f64),
+            "constitution" => Some(self.stats.constitution as f64),
+            "intelligence" => Some(self.stats.intelligence as f64),
+            "precision" => Some(self.stats.precision as f64),
+            "wisdom" => Some(self.stats.wisdom as f64),
+            "speed" => Some(self.stats.speed as f64),
             _ => None,
         }
     }

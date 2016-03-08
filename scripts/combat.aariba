@@ -1,1 +1,3 @@
-$target.pv=$target.pv-3;
+difference = $source.strength - $target.constitution;
+damages    = max(rand(0, 3) + difference, 1);
+$target.pv = $target.pv - damages;

@@ -110,12 +110,19 @@ impl Entity {
         &self.e_type
     }
 
+    // Takes effects into account
     pub fn recompute_current_stats(&mut self) {
         let speed = match self.e_type {
             EntityType::Player(_) => DEFAULT_SPEED,
             EntityType::Invoked(_) => DEFAULT_AI_SPEED,
         };
         self.stats.speed = speed;
+        self.stats.strength = self.base_stats.strength;
+        self.stats.dexterity = self.base_stats.dexterity;
+        self.stats.constitution = self.base_stats.constitution;
+        self.stats.intelligence = self.base_stats.intelligence;
+        self.stats.precision = self.base_stats.precision;
+        self.stats.wisdom = self.base_stats.wisdom;
     }
 
     pub fn walk(&mut self, orientation: Option<Direction>) {
@@ -244,6 +251,13 @@ pub enum EntityType {
 
 #[derive(Debug,Clone,Default)]
 struct CurrentStats {
+    level: u64,
+    strength: u64,
+    dexterity: u64,
+    constitution: u64,
+    intelligence: u64,
+    precision: u64,
+    wisdom: u64,
     speed: f32,
 }
 
