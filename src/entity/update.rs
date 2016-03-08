@@ -103,7 +103,7 @@ impl Entity {
         if self.attacking == 30 {
             for entity in others.iter_mut() {
                 if attack_success(self, entity) {
-                    let mut integration = AaribaIntegration::new(entity);
+                    let mut integration = AaribaIntegration::new(self, entity);
                     match scripts.combat.evaluate(&mut integration) {
                         Ok(()) => {}
                         Err(e) => {
@@ -160,25 +160,24 @@ fn attack_success(attacker: &Entity, target: &Entity) -> bool {
     attack_box.collision(attack_position, &target_box, target_position)
 }
 
-// Does it still make sense to have a separate type?
-// We could just implement Store for Entity
 #[derive(Debug)]
-struct AaribaIntegration<'a> {
-    target: &'a mut Entity,
+struct AaribaIntegration<'a,'b> {
+    source: &'a mut Entity,
+    target: &'b mut Entity,
 }
 
-impl <'a> Store for AaribaIntegration<'a> {
+impl <'a> Store for &'a mut Entity {
     fn get_attribute(&self, var: &str) -> Option<f64> {
         match var {
-            "pv" => Some(self.target.pv as f64),
+            "pv" => Some(self.pv as f64),
             _ => None,
         }
     }
     fn set_attribute(&mut self, var: &str, value: f64) -> Result<Option<f64>,()> {
         match var {
             "pv" => {
-                let old = self.target.pv as f64;
-                self.target.pv = value as u64;
+                let old = self.pv as f64;
+                self.pv = value as u64;
                 Ok(Some(old))
             }
             _ => Err(()),
@@ -186,10 +185,46 @@ impl <'a> Store for AaribaIntegration<'a> {
     }
 }
 
-impl <'a> AaribaIntegration<'a> {
-    fn new(entity: &'a mut Entity) -> AaribaIntegration<'a> {
+impl <'a,'b> Store for AaribaIntegration<'a,'b> {
+    fn get_attribute(&self, var: &str) -> Option<f64> {
+        let mut splitn = var.splitn(2, '.');
+        let first = match splitn.next() {
+            Some(first) => first,
+            None => return None,
+        };
+        let second = match splitn.next() {
+            Some(s) => s,
+            None => return None,
+        };
+        match first {
+            "target" => self.target.get_attribute(second),
+            "source" => self.source.get_attribute(second),
+            _ => None,
+        }
+    }
+    fn set_attribute(&mut self, var: &str, value: f64) -> Result<Option<f64>,()> {
+        let mut splitn = var.splitn(2, '.');
+        let first = match splitn.next() {
+            Some(first) => first,
+            None => return Err(()),
+        };
+        let second = match splitn.next() {
+            Some(s) => s,
+            None => return Err(()),
+        };
+        match first {
+            "target" => self.target.set_attribute(second, value),
+            "source" => self.source.set_attribute(second, value),
+            _ => Err(()),
+        }
+    }
+}
+
+impl <'a,'b> AaribaIntegration<'a,'b> {
+    fn new(source: &'a mut Entity, target: &'b mut Entity) -> AaribaIntegration<'a, 'b> {
         AaribaIntegration {
-            target: entity,
+            source: source,
+            target: target,
         }
     }
 }
