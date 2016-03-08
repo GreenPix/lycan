@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use super::{Entity,Order,EntityStore,Wrapper};
+use super::{Entity,Order,EntityStore,OthersAccessor};
 use messages::Notification;
 use id::Id;
 use nalgebra::Vec2;
@@ -95,13 +95,13 @@ impl Entity {
 
     /// Checks for collisions with others (attack, movement ...)
     fn check_collisions(&mut self,
-                        others: &mut Wrapper,
+                        others: &mut OthersAccessor,
                         scripts: &AaribaScripts,
                         ) {
         // TODO: Broad phase first?
 
         if self.attacking == 30 {
-            for entity in others.iter() {
+            for entity in others.iter_mut() {
                 if attack_success(self, entity) {
                     let mut integration = AaribaIntegration::new(entity);
                     match scripts.combat.evaluate(&mut integration) {

@@ -1,7 +1,6 @@
 use std::fmt::{self,Formatter};
 use std::cell::{RefCell,RefMut,Ref};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::marker;
 
 use nalgebra::{Pnt2,Vec2};
 use rand;
@@ -10,10 +9,12 @@ use id::{Id,HasForgeableId};
 use data::{Map,Player,Stats,Position};
 use messages::{EntityState};
 use self::hitbox::RectangleHitbox;
+pub use self::double_iterator::{DoubleIterMut,OthersAccessor,OthersIter,OthersIterMut};
 
 mod status;
 mod update;
 mod hitbox;
+mod double_iterator;
 //mod serialize;
 
 pub use self::update::update;
@@ -273,9 +274,9 @@ impl EntityStore {
         self.get_position(id).map(move |position| self.entities.get_mut(position).unwrap())
     }
 
-    pub fn get_mut_wrapper<'a>(&'a mut self, id: Id<Entity>) -> Option<(&'a mut Entity, Wrapper<'a>)> {
+    pub fn get_mut_wrapper<'a>(&'a mut self, id: Id<Entity>) -> Option<(&'a mut Entity, OthersAccessor<'a>)> {
         self.get_position(id).map(move |position| {
-            Wrapper::new(&mut self.entities, position).unwrap()
+            OthersAccessor::new(&mut self.entities, position).unwrap()
         })
     }
 
@@ -296,143 +297,8 @@ impl EntityStore {
         self.entities.iter_mut()
     }
 
-    pub fn iter_mut_wrapper(&mut self) -> IterMutWrapper {
-        IterMutWrapper {
-            inner: &mut self.entities,
-            current_position: 0,
-        }
-    }
-}
-
-pub struct Wrapper<'a> {
-    inner: &'a mut [Entity],
-    borrowed_entity_position: usize,
-}
-
-impl <'a> Wrapper<'a> {
-    pub fn new(a: &'a mut [Entity], position: usize) -> Option<(&'a mut Entity, Wrapper<'a>)> {
-        let entity: &mut Entity = unsafe {
-            match a.get_mut(position) {
-                None => return None,
-                Some(entity) => ::std::mem::transmute(entity),
-            }
-        };
-        let wrapper = Wrapper {
-            inner: a,
-            borrowed_entity_position: position
-        };
-        Some((entity, wrapper))
-    }
-
-    pub fn get_by_index(&mut self, index: usize) -> Option<&mut Entity> {
-        if index == self.borrowed_entity_position {
-            None
-        } else {
-            self.inner.get_mut(index)
-        }
-        /*
-        let entity = self.inner.get(
-        let a: &mut [T] = unsafe { mem::transmute(self.inner as *mut [T]) };
-        a.get_mut(index)
-        */
-    }
-
-    pub fn get(&mut self, id: Id<Entity>) -> Option<&mut Entity> {
-        match self.get_position(id) {
-            Some(pos) => self.get_by_index(pos),
-            None => None,
-        }
-    }
-
-    pub fn iter(&mut self) -> WrapperIter {
-        let p = self.inner.as_mut_ptr();
-        unsafe {
-            WrapperIter {
-                ptr: p,
-                end: p.offset(self.inner.len() as isize) ,
-                borrowed_entity: p.offset(self.borrowed_entity_position as isize),
-                _marker: marker::PhantomData,
-            }
-        }
-    }
-
-    // XXX: We should probably have a &self version
-    pub fn get_position(&mut self, id: Id<Entity>) -> Option<usize> {
-        let borrowed = self.borrowed_entity_position;
-        for (position, entity) in self.iter().enumerate() {
-            if entity.get_id() == id {
-                let adjusted_position = if position >= borrowed {
-                    position + 1
-                } else {
-                    position
-                };
-                return Some(adjusted_position);
-            }
-        }
-        None
-    }
-}
-
-// TODO: Have a *const version
-pub struct WrapperIter<'a> {
-    ptr: *mut Entity,
-    end: *mut Entity,
-    borrowed_entity: *mut Entity,
-    _marker: marker::PhantomData<&'a mut Entity>,
-}
-
-impl <'a> Iterator for WrapperIter<'a> {
-    type Item = &'a mut Entity;
-
-    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-        if self.ptr == self.end {
-            None
-        } else {
-            let old = self.ptr;
-            self.ptr = unsafe { self.ptr.offset(1) };
-            if old == self.borrowed_entity {
-                self.next()
-            } else {
-                unsafe { Some(::std::mem::transmute(old)) }
-            }
-        }
-    }
-}
-
-pub struct IterMutWrapper<'a> {
-    inner: &'a mut [Entity],
-    current_position: usize,
-}
-
-// Cannot implement Iterator because an item borrows the iterator
-impl <'a> IterMutWrapper<'a> {
-    pub fn next_item<'b>(&'b mut self) -> Option<(&'b mut Entity, Wrapper<'b>)> {
-        let res = Wrapper::new(self.inner, self.current_position);
-        self.current_position += 1;
-        res
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::{Entity, EntityStore};
-    use id::Id;
-    #[test]
-    fn test() {
-        let mut store = EntityStore::new();
-        store.push(Entity::fake_player(Id::forge(0)));
-        store.push(Entity::fake_player(Id::forge(1)));
-        store.push(Entity::fake_player(Id::forge(2)));
-        {
-            let mut double_iter = store.iter_mut_wrapper();
-            while let Some((entity,mut wrapper)) = double_iter.next_item() {
-                let id = entity.get_id();
-                for other in wrapper.iter() {
-                    assert!(id != other.get_id());
-                }
-                assert!(wrapper.get(id).is_none());
-            }
-        }
+    pub fn iter_mut_wrapper(&mut self) -> DoubleIterMut {
+        DoubleIterMut::new(&mut self.entities)
     }
 }
 
