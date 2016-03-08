@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::{self,Sender,Receiver};
-use std::fmt;
+use std::fmt::{self,Write};
 use std::hash::Hash;
 
 use threadpool::ThreadPool;
 use mio::Sender as MioSender;
+use serde_json;
 
+use utils;
 use id::Id;
 use data::{Map,Player};
 use entity::Entity;
@@ -19,6 +21,7 @@ pub struct ResourceManager {
     requests: MioSender<Request>,
     pool: ThreadPool,
     job: usize,
+    base_url: String,
 }
 
 struct ResourceManagerInner<T,U> {
@@ -49,7 +52,7 @@ where U: RetreiveFromId<T>,
         }
     }
 
-    fn load(&mut self, id: Id<T>, pool: &ThreadPool, job: usize) {
+    fn load(&mut self, id: Id<T>, pool: &ThreadPool, job: usize, info: U::Info) {
         self.process_inputs();
         if self.resources.get(&id).is_none() &&
             self.errors.get(&id).is_none() &&
@@ -59,7 +62,7 @@ where U: RetreiveFromId<T>,
                 let tx = self.tx.clone();
                 pool.execute(move || {
                     // TODO: fetch the resource on the disk
-                    let fetched = U::retrieve(id);
+                    let fetched = U::retrieve(id, info);
 
                     tx.send((id, fetched)).unwrap();
                     sender.send(Request::JobFinished(job));
@@ -83,7 +86,7 @@ where U: RetreiveFromId<T>,
         }
     }
 
-    fn retrieve(&mut self, id: Id<T>, pool: &ThreadPool, job: usize) -> Result<U, Error> {
+    fn retrieve(&mut self, id: Id<T>, pool: &ThreadPool, job: usize, info: U::Info) -> Result<U, Error> {
         self.process_inputs();
 
         // We already have it
@@ -100,7 +103,7 @@ where U: RetreiveFromId<T>,
         }
 
         // We don't have it, not processing and no errors ... we fetch it
-        self.load(id, pool, job);
+        self.load(id, pool, job, info);
         Err(Error::Processing(job))
     }
 }
@@ -109,7 +112,7 @@ impl <T,U> ResourceManagerInner<T,U>
 where U: RetreiveFromId<T>,
       U: Send + Clone + 'static,
       T: 'static {
-    fn get(&mut self, id: Id<T>, pool: &ThreadPool, job: usize) -> Result<U, Error> {
+    fn get(&mut self, id: Id<T>, pool: &ThreadPool, job: usize, info: U::Info) -> Result<U, Error> {
         self.process_inputs();
         // We already have it
         if let Some(data) =  self.resources.get(&id) {
@@ -125,38 +128,39 @@ where U: RetreiveFromId<T>,
         }
 
         // We don't have it, not processing and no errors ... we fetch it
-        self.load(id, pool, job);
+        self.load(id, pool, job, info);
         Err(Error::Processing(job))
     }
 }
 
 impl ResourceManager {
-    pub fn new(threads: usize, requests: MioSender<Request>) -> ResourceManager {
+    pub fn new(threads: usize, requests: MioSender<Request>, url: String) -> ResourceManager {
         ResourceManager {
             maps: ResourceManagerInner::new(requests.clone()),
             players: ResourceManagerInner::new(requests.clone()),
             pool: ThreadPool::new(threads),
             requests: requests,
             job: 0,
+            base_url: url,
         }
     }
 
     pub fn load_map(&mut self, map: Id<Map>) {
         let job = self.job;
         self.job += 1;
-        self.maps.load(map, &self.pool, job);
+        self.maps.load(map, &self.pool, job, ());
     }
 
     pub fn get_map(&mut self, map: Id<Map>) -> Result<Arc<Map>, Error> {
         let job = self.job;
         self.job += 1;
-        self.maps.get(map, &self.pool, job)
+        self.maps.get(map, &self.pool, job, ())
     }
 
     pub fn load_player(&mut self, player: Id<Player>) {
         let job = self.job;
         self.job += 1;
-        self.players.load(player, &self.pool, job);
+        self.players.load(player, &self.pool, job, self.base_url.clone());
     }
 
     pub fn retrieve_player(&mut self,
@@ -164,7 +168,7 @@ impl ResourceManager {
                           ) -> Result<Entity, Error> {
         let job = self.job;
         self.job += 1;
-        self.players.retrieve(player, &self.pool, job)
+        self.players.retrieve(player, &self.pool, job, self.base_url.clone())
     }
 }
 
@@ -228,7 +232,8 @@ impl <T: fmt::Debug, U: fmt::Debug> fmt::Debug for ResourceManagerInner<T,U> {
 
 // Fetch the resource from the disk
 pub trait RetreiveFromId<T=Self> {
-    fn retrieve(id: Id<T>) -> Result<Self,Error> where Self: Sized;
+    type Info: Send;
+    fn retrieve(id: Id<T>, info: Self::Info) -> Result<Self,Error> where Self: Sized;
 }
 
 #[derive(Debug,Clone,Copy)]
@@ -238,20 +243,29 @@ pub enum Error {
 }
 
 impl RetreiveFromId<Player> for Entity {
-    fn retrieve(id: Id<Player>) -> Result<Entity,Error> {
+    type Info = String;
+    fn retrieve(id: Id<Player>, mut base: String) -> Result<Entity,Error> {
+        let _ = write!(base, "/entities/{}", id);
+        if let Ok(serialized_entity) = utils::get_file_from_url(&base) {
+            if let Ok(entity) = serde_json::from_str::<Player>(&serialized_entity) {
+                return Ok(Entity::from(entity))
+            }
+        }
         Ok(Entity::fake_player(id))
     }
 }
 
 impl RetreiveFromId for Map {
-    fn retrieve(id: Id<Map>) -> Result<Map,Error> {
+    type Info = ();
+    fn retrieve(id: Id<Map>, _: ()) -> Result<Map,Error> {
         Ok(Map::new(id))
     }
 }
 
 impl <T,U> RetreiveFromId<U> for Arc<T>
 where T: RetreiveFromId<U> {
-    fn retrieve(id: Id<U>) -> Result<Arc<T>,Error> {
-        T::retrieve(id).map(Arc::new)
+    type Info = T::Info;
+    fn retrieve(id: Id<U>, info: Self::Info) -> Result<Arc<T>,Error> {
+        T::retrieve(id, info).map(Arc::new)
     }
 }

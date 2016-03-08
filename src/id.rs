@@ -8,6 +8,8 @@ use std::collections::HashSet;
 
 use mio::Token;
 use rustc_serialize::{Encodable,Encoder,Decodable,Decoder};
+use serde::de::{self,Deserialize,Deserializer,Visitor};
+use serde::ser::{Serialize,Serializer};
 
 pub type IdImpl = u64;
 
@@ -139,5 +141,37 @@ impl <T: HasForgeableId> Decodable for Id<T> {
             id: id,
             marker: PhantomData,
         })
+    }
+}
+
+impl <T: HasForgeableId> Deserialize for Id<T> {
+    fn deserialize<D: Deserializer>(d: &mut D) -> Result<Self, D::Error> {
+        let id = try!(d.deserialize_u64(U64Visitor));
+        Ok(Id {
+            id: id,
+            marker: PhantomData,
+        })
+    }
+}
+
+impl <T: HasForgeableId> Serialize for Id<T> {
+    fn serialize<D: Serializer>(&self, d: &mut D) -> Result<(), D::Error> {
+        d.serialize_u64(self.id)
+    }
+}
+
+struct U64Visitor;
+
+impl Visitor for U64Visitor {
+    type Value = u64;
+
+    fn visit_u64<E>(&mut self, v: u64) -> Result<u64,E>
+    where E: de::Error {
+        Ok(v)
+    }
+
+    fn visit_i64<E>(&mut self, v: i64) -> Result<u64,E>
+    where E: de::Error {
+        Ok(v as u64)
     }
 }

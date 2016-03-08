@@ -1,3 +1,5 @@
+#![feature(custom_derive, plugin)]
+#![plugin(serde_macros)]
 #![feature(fnbox)]
 
 #![allow(unused_imports)]
@@ -19,6 +21,8 @@ extern crate aariba;
 extern crate hyper;
 extern crate bytes;
 extern crate behaviour_tree;
+extern crate serde;
+extern crate serde_json;
 
 pub mod actor;
 pub mod entity;
@@ -27,6 +31,7 @@ pub mod instance;
 pub mod id;
 pub mod data;
 pub mod ai;
+pub mod utils;
 mod scripts;
 mod network;
 

@@ -7,6 +7,7 @@ use std::boxed::FnBox;
 use mio::*;
 use mio::tcp::TcpListener;
 
+use utils;
 use instance::Instance;
 use actor::{NetworkActor,ActorId};
 use id::Id;
@@ -58,12 +59,13 @@ impl Game {
         scripts: AaribaScripts,
         trees: BehaviourTrees,
         sender: Sender<Request>,
+        base_url: String,
         ) -> Game {
         Game {
             instances: HashMap::new(),
             player_positions: HashMap::new(),
             server: server,
-            resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS, sender),
+            resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS, sender, base_url),
             arriving_clients: ArrivingClientManager::new(),
             callbacks: Callbacks::new(),
             scripts: scripts,
@@ -83,7 +85,13 @@ impl Game {
         let mut event_loop = try!(EventLoop::new());
         try!(event_loop.register(&server, SERVER, EventSet::all(), PollOpt::level()));
         let sender = event_loop.channel();
-        let mut game = Game::new(server, scripts, behaviour_trees, sender.clone());
+        let mut game = Game::new(
+            server,
+            scripts,
+            behaviour_trees,
+            sender.clone(),
+            parameters.configuration_url.clone(),
+            );
 
         // XXX: Hacks
         let fake_tokens = authentication::generate_fake_authtok();
@@ -110,9 +118,14 @@ impl Game {
                 // TODO: Store it or change its map ...
 
                 for entity in entities {
-                    if let EntityType::Player(ref player) = *entity.get_type() {
-                        self.player_positions.remove(&player.get_id());
+                    let player: Option<Player> = entity.into();
+                    if let Some(player) = player {
+                        self.player_positions.remove(&player.id);
+
+                        let path = format!("./scripts/entities/{}", player.id);
+                        utils::serialize_to_file(path, &player);
                     }
+
                 }
             }
             Request::InstanceShuttingDown(state) => {
