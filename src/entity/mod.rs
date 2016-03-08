@@ -252,6 +252,9 @@ pub struct PlayerData {
     name: String,
     id: Id<Player>,
     map: Id<Map>,
+    experience: u64,
+    gold: u64,
+    guild: String,
 }
 
 impl PlayerData {
@@ -267,6 +270,9 @@ impl From<Player> for Entity {
                 name: player.name,
                 id: player.id,
                 map: player.position.map,
+                experience: player.experience,
+                gold: player.gold,
+                guild: player.guild,
             }),
             Pnt2::new(player.position.x, player.position.y),
             Direction::East,   // TODO
@@ -296,9 +302,9 @@ impl Into<Option<Player>> for Entity {
             skin: self.skin,
             current_pv: self.pv,
             position: position,
-            experience: 0,
-            gold: 0,
-            guild: String::new(),
+            experience: player_data.experience,
+            gold: player_data.gold,
+            guild: player_data.guild,
             stats: self.base_stats,
         };
 
