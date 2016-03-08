@@ -1,8 +1,9 @@
-use std::collections::hash_map::{HashMap,Entry};
+use std::collections::hash_map::{self,HashMap,Entry};
 use std::thread;
 use std::fmt::{Formatter,Display,Error};
 use std::io;
 use std::mem;
+use std::time::Duration as StdDuration;
 
 use mio::*;
 use time::{Duration,SteadyTime};
@@ -139,6 +140,10 @@ impl Actors {
         }
         Ok(())
     }
+
+    fn drain_external(&mut self) -> hash_map::Drain<ActorId,NetworkActor> {
+        self.external_actors.drain()
+    }
 }
 
 
@@ -155,6 +160,7 @@ pub struct Instance {
     next_notifications: Vec<Notification>,
     scripts: AaribaScripts,
     trees: BehaviourTrees,
+    shutting_down: bool,
 
     // XXX: Do we need to change the refresh period?
     refresh_period: Duration,
@@ -199,6 +205,7 @@ impl Instance {
             next_notifications: Default::default(),
             scripts: scripts,
             trees: trees,
+            shutting_down: false,
         };
 
         // XXX Fake an AI on the map
@@ -212,7 +219,7 @@ impl Instance {
                 self.register_client(event_loop, actor, entities);
             }
             Command::Shutdown => {
-                self.shutdown(event_loop);
+                self.shutdown(Some(event_loop));
             }
             Command::UnregisterActor(id) => {
                 self.unregister_client(event_loop, id);
@@ -295,27 +302,57 @@ impl Instance {
         }
     }
 
-    fn shutdown(&mut self, event_loop: &mut EventLoop<Self>) {
-        let state = ShuttingDownState::new(self.id);
-        /*
-        for (token, actor) in self.actors.drain() {
-            actor.deregister(event_loop);
-            // TODO: Check first if the actor needs to be sent back to the Game
+    fn shutdown(&mut self, mut event_loop: Option<&mut EventLoop<Self>>) {
+        let mut state = ShuttingDownState::new(self.id);
+        for (actor_id, actor) in self.actors.drain_external() {
+            // Weird thing ... cannot write Some(ref mut ev) ...
+            match event_loop.take() {
+                Some(ev) => {
+                    let _ = actor.deregister(ev);
+                    event_loop = Some(ev);
+                },
+                None => {}
+            }
             let mut entities = Vec::new();
             for entity_id in actor.entities_iter() {
-                match self.entities.remove(entity_id) {
-                    Some(entity) => entities.push(entity),
-                    None => error!("Instance {}: Inconsistency between actor {} and its entities: \
+                match self.entities.remove(*entity_id) {
+                    Some(e) => entities.push(e),
+                    None => {
+                        error!("Instance {}: Inconsistency between actor {} and its entities: \
                                     entity {} is not present in the map array",
-                                   self.id, token, entity_id),
+                                    self.id, actor_id, entity_id);
+                    }
                 }
             }
+
             state.push(actor, entities);
         }
-        */
-        self.request.send(Request::InstanceShuttingDown(state)).unwrap();
-        event_loop.shutdown();
-        unimplemented!();
+
+        let mut request_opt = Some(Request::InstanceShuttingDown(state));
+        while let Some(request) = request_opt.take() {
+            if let Err(e) = self.request.send(request) {
+                match e {
+                    NotifyError::Io(e) => {
+                        error!("IO Error when sending back state: {}", e);
+                    }
+                    NotifyError::Full(req) => {
+                        ::std::thread::sleep(StdDuration::from_millis(100));
+                        // Retry
+                        request_opt = Some(req);
+                    }
+                    NotifyError::Closed(Some(state2)) => {
+                        // TODO: Something to do with the state we got back?
+                        error!("The Game instance has hung up!");
+                    }
+                    NotifyError::Closed(None) => {
+                        error!("The Game instance has hung up!");
+                    }
+                }
+            }
+        }
+        self.shutting_down = true;
+        event_loop.map(|e| e.shutdown());
+
         // TODO: The event loop will not exit immediately ... we should handle that
     }
 
@@ -426,6 +463,7 @@ pub enum InstanceTick {
 #[derive(Debug)]
 pub struct ShuttingDownState {
     pub id: Id<Instance>,
+    pub was_saved: bool,
     pub external_actors: Vec<(NetworkActor,Vec<Entity>)>,
     //pub internal_actors: Vec<(Actor,Vec<Entity>)>,
 }
@@ -434,11 +472,31 @@ impl ShuttingDownState {
     pub fn new(id: Id<Instance>) -> ShuttingDownState {
         ShuttingDownState {
             id: id,
+            was_saved: false,
             external_actors: Vec::new(),
         }
     }
 
     pub fn push(&mut self, actor: NetworkActor, entities: Vec<Entity>) {
         self.external_actors.push((actor, entities));
+    }
+}
+
+impl Drop for ShuttingDownState {
+    fn drop(&mut self) {
+        if !self.was_saved {
+            // The state has not been processed and saved
+            // This is our last chance to save all the modifications somewhere
+            error!("Failed to save the state of instance {}\n{:#?}", self.id, self.external_actors);
+        }
+    }
+}
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        if !self.shutting_down {
+            error!("Instance {} has not been shutdown properly", self.id);
+            self.shutdown(None);
+        }
     }
 }
