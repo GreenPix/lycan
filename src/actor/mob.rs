@@ -36,7 +36,7 @@ impl AiActor {
     }
     pub fn execute_orders(&mut self,
                       entities: &mut EntityStore,
-                      notifications: &mut Vec<Notification>,
+                      _notifications: &mut Vec<Notification>,
                       _previous: &[Notification]) {
         // Context should give access to storage / current game state
         let me = match self.entity {

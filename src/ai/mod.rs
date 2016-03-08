@@ -139,7 +139,7 @@ pub struct GetClosestTarget {
 
 impl <'a,'b> BehaviourTreeNode<Context<'a,'b>> for GetClosestTarget {
     fn visit(&mut self, context: &mut Context) -> VisitResult {
-        let (me, mut others) = match context.entities.get_mut_wrapper(context.me) {
+        let (me, others) = match context.entities.get_mut_wrapper(context.me) {
             None => {
                 warn!("Main entity {} was not found in entities list", context.me);
                 return VisitResult::Failure;

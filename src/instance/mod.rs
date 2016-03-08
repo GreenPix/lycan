@@ -246,12 +246,11 @@ impl Instance {
                     actor.send_message(event_loop, message);
                 }
                 for entity in entities {
-                    let entity_id = entity.get_id();
+                    let entity_id = entity.get_id().as_u64();
                     let position = entity.get_position();
                     let skin = entity.get_skin();
                     let pv = entity.get_pv();
-                    let id = entity.get_id().as_u64();
-                    let notification = Notification::new_entity(id, position, skin, pv);
+                    let notification = Notification::new_entity(entity_id, position, skin, pv);
                     self.next_notifications.push(notification);
                     self.entities.push(entity);
                 }

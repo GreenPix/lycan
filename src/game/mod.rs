@@ -234,7 +234,7 @@ impl Handler for Game {
             UDP_SOCKET => {
             }
             _token => {
-                if let Some((mut actor, id)) = self.arriving_clients.ready(event_loop, token, event) {
+                if let Some((actor, id)) = self.arriving_clients.ready(event_loop, token, event) {
                     self.player_ready(event_loop, actor, id);
                 }
             }

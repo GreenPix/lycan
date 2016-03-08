@@ -65,7 +65,7 @@ where U: RetreiveFromId<T>,
                     let fetched = U::retrieve(id, info);
 
                     tx.send((id, fetched)).unwrap();
-                    sender.send(Request::JobFinished(job));
+                    sender.send(Request::JobFinished(job)).unwrap();
                 });
         }
     }
