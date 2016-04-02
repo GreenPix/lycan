@@ -1,5 +1,3 @@
-#![feature(custom_derive, plugin)]
-#![plugin(serde_macros)]
 #![feature(fnbox)]
 
 #![allow(unused_imports)]
