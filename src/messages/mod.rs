@@ -11,6 +11,7 @@ pub use lycan_serialize::EntityOrder;
 
 use std::fmt::{self,Formatter,Debug};
 use std::boxed::FnBox;
+use std::sync::mpsc::Sender;
 
 use mio::{Handler,EventLoop};
 use nalgebra::{Pnt2,Vec2};
@@ -61,11 +62,15 @@ impl <T: Handler> Debug for Arbitrary<T> {
 #[derive(Debug)]
 pub enum Request {
     Arbitrary(Arbitrary<Game>),
+
+    // Responses from Instances
     UnregisteredActor {
         actor: NetworkActor,
         entities: Vec<Entity>,
     },
     InstanceShuttingDown(ShuttingDownState),
+
+    // Callback from ResourceManager
     JobFinished(usize),
 }
 
