@@ -21,6 +21,7 @@ extern crate bytes;
 extern crate behaviour_tree;
 extern crate serde;
 extern crate serde_json;
+#[macro_use] extern crate nickel;
 
 pub mod actor;
 pub mod entity;

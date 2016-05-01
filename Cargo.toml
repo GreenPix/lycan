@@ -25,6 +25,7 @@ hyper = "0.6.16"
 bytes = "0.3"
 serde = "0.7"
 serde_json = "0.7"
+nickel = "0.7"
 
 [build-dependencies]
 serde_codegen = "*"
