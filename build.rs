@@ -7,6 +7,7 @@ use std::fs::DirBuilder;
 
 const FILES: &'static [&'static str] = &[
     "src/data/player.rs.in",
+    "src/data/map.rs.in",
 ];
 pub fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();
