@@ -4,9 +4,19 @@ use std::sync::mpsc::{self,Sender};
 use mio::Sender as MioSender;
 use nickel::{Nickel,HttpRouter};
 use serde_json::ser::to_string_pretty;
+use nickel::JsonBody;
 
+use lycan_serialize::AuthenticationToken;
+
+use id::Id;
 use messages::Request as LycanRequest;
 use data::Map;
+
+#[derive(Debug,RustcDecodable)]
+struct AuthenticatedRequest<T> {
+    secret: String,
+    params: T,
+}
 
 pub fn start_management_api(sender: MioSender<LycanRequest>) {
     thread::spawn(move || {
@@ -35,6 +45,8 @@ macro_rules! define_request {
 }
 
 fn add_management_routes(server: &mut Nickel, sender: MioSender<LycanRequest>) {
+    // TODO: Add middleware at the beginning for authentication of requests
+
     let clone = sender.clone();
     server.get("/maps", middleware! {
         let maps = define_request!(clone, |game| {
@@ -50,5 +62,29 @@ fn add_management_routes(server: &mut Nickel, sender: MioSender<LycanRequest>) {
             g.start_shutdown(el);
         });
         "OK"
+    });
+
+    let clone = sender.clone();
+    #[derive(Debug,RustcDecodable)]
+    struct ConnectCharacterParam {
+        token: String,
+        id: u64,
+    }
+    server.post("/connect_character", middleware! { |request|
+        match request.json_as::<AuthenticatedRequest<ConnectCharacterParam>>() {
+            Ok(decoded) => {
+                debug!("Received request to /connect_character: {:?}", decoded);
+                define_request!(clone, |game| {
+                    let id = Id::forge(decoded.params.id);
+                    let token = AuthenticationToken(decoded.params.token);
+                    game.connect_character(id, token);
+                });
+                Ok("OK")
+            }
+            Err(e) => {
+                debug!("Error while parsing body for /connect_character: {}", e);
+                Err(e.to_string())
+            }
+        }
     });
 }

@@ -7,6 +7,8 @@ use std::boxed::FnBox;
 use mio::*;
 use mio::tcp::TcpListener;
 
+use lycan_serialize::AuthenticationToken;
+
 use utils;
 use instance::Instance;
 use actor::{NetworkActor,ActorId};
@@ -242,6 +244,12 @@ impl Game {
             let path = format!("./scripts/entities/{}", player.id);
             utils::serialize_to_file(path, &player);
         }
+    }
+
+    fn connect_character(&mut self, id: Id<Player>, token: AuthenticationToken) {
+        debug!("Connecting character {} with token {}", id, token.0);
+        self.arriving_clients.new_auth_tok(token, id);
+        self.resource_manager.load_player(id);
     }
 }
 

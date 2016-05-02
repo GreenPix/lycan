@@ -305,7 +305,7 @@ dependencies = [
 [[package]]
 name = "lycan-serialize"
 version = "0.1.1"
-source = "git+https://github.com/Greenpix/lycan-serialize.git#923e95809569c3c1f8c697353f3c4cdbc798a0f8"
+source = "git+https://github.com/Greenpix/lycan-serialize.git#97d805f944c538fc5c3fe8b61070beae5f158163"
 dependencies = [
  "byteorder 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.5 (registry+https://github.com/rust-lang/crates.io-index)",

@@ -49,7 +49,9 @@ impl ArrivingClientManager {
     }
 
     pub fn new_auth_tok(&mut self, tok: AuthenticationToken, id: Id<Player>) {
-        self.tokens.insert(id, tok);
+        if let Some(_old) = self.tokens.insert(id, tok) {
+            warn!("Replacing old token for player id {}", id);
+        }
     }
 
     pub fn ready<H: Handler>(&mut self,
