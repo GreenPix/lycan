@@ -57,6 +57,25 @@ fn add_management_routes(server: &mut Nickel, sender: MioSender<LycanRequest>) {
     });
 
     let clone = sender.clone();
+    server.get("/maps/:id/instances", middleware! { |request|
+        // id is part of the route, the unwrap should never fail
+        let id = request.param("id").unwrap();
+        match id.parse::<u64>() {
+            Ok(parsed) => {
+                //let id_instance: Id<Instance> = Id::forge(parsed);
+                let instances = define_request!(clone, |game| {
+                    game.get_instances(Id::forge(parsed))
+                });
+                let json = to_string_pretty(&instances).unwrap();
+                json
+            }
+            Err(e) => {
+                format!("ERROR: invalid id {}", e)  // TODO: Do things properly (set error code ...)
+            }
+        }
+    });
+
+    let clone = sender.clone();
     server.post("/shutdown", middleware! {
         define_request!(clone, |g, el| {
             g.start_shutdown(el);

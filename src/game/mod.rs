@@ -253,6 +253,11 @@ impl Game {
         self.arriving_clients.new_auth_tok(token, id);
         self.resource_manager.load_player(id);
     }
+
+    fn get_instances(&mut self, map: Id<Map>) -> Option<Vec<Id<Instance>>> {
+        self.map_instances.get(&map)
+            .map(|instances| { instances.keys().cloned().collect() })
+    }
 }
 
 impl Handler for Game {
