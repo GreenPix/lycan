@@ -154,7 +154,7 @@ impl <T: HasForgeableId> Deserialize for Id<T> {
     }
 }
 
-impl <T: HasForgeableId> Serialize for Id<T> {
+impl <T> Serialize for Id<T> {
     fn serialize<D: Serializer>(&self, d: &mut D) -> Result<(), D::Error> {
         d.serialize_u64(self.id)
     }
