@@ -132,7 +132,8 @@ where U: RetreiveFromId<T>,
         Err(Error::Processing(job))
     }
 
-    fn get_all(&self) -> Vec<U> {
+    fn get_all(&mut self) -> Vec<U> {
+        self.process_inputs();
         self.resources.values().cloned().collect()
     }
 }
@@ -175,7 +176,7 @@ impl ResourceManager {
         self.players.retrieve(player, &self.pool, job, self.base_url.clone())
     }
 
-    pub fn get_all_maps(&self) -> Vec<Arc<Map>> {
+    pub fn get_all_maps(&mut self) -> Vec<Arc<Map>> {
         self.maps.get_all()
     }
 }

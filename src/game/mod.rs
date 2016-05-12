@@ -108,7 +108,9 @@ impl Game {
         for (tok, id) in fake_tokens {
             game.arriving_clients.new_auth_tok(tok, id);
         }
+        let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
         game.map_instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
+        // End hacks
 
         thread::spawn(move || {
             debug!("Started game");
