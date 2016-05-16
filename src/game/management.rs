@@ -10,6 +10,7 @@ use lycan_serialize::AuthenticationToken;
 
 use id::Id;
 use messages::Request as LycanRequest;
+use messages::Command;
 use data::Map;
 
 #[derive(Debug,RustcDecodable)]
@@ -44,6 +45,30 @@ macro_rules! define_request {
     };
 }
 
+/// Macro to reduce the boilerplate of creating a channel, create a request, send it to Game
+/// Route it to the correct Instance and wait for the response
+macro_rules! define_request_instance {
+    ($sender:ident, $id:ident, |$instance:ident, $event_loop:ident| $bl:block) => {{
+        let (tx, rx) = mpsc::channel();
+        let request = LycanRequest::new(move |g, _el| {
+            let instance = match g.instances.get(&$id) {
+                Some(i) => i,
+                None => { let _ = tx.send(Err(())); return; }
+            };
+            let command = Command::new(move |$instance, $event_loop| {
+                let result = $bl;
+                let _ = tx.send(Ok(result));
+            });
+            let _ = instance.send(command);
+        });
+        $sender.send(request).unwrap();
+        rx.recv().unwrap().unwrap()
+    }};
+    ($sender:ident, $id:ident, |$instance:ident| $bl:block) => {
+        define_request_instance!($sender, $id, |$instance, _event_loop| $bl)
+    };
+}
+
 fn add_management_routes(server: &mut Nickel, sender: MioSender<LycanRequest>) {
     // TODO: Add middleware at the beginning for authentication of requests
 
@@ -62,11 +87,28 @@ fn add_management_routes(server: &mut Nickel, sender: MioSender<LycanRequest>) {
         let id = request.param("id").unwrap();
         match id.parse::<u64>() {
             Ok(parsed) => {
-                //let id_instance: Id<Instance> = Id::forge(parsed);
                 let instances = define_request!(clone, |game| {
                     game.get_instances(Id::forge(parsed))
                 });
                 let json = to_string_pretty(&instances).unwrap();
+                json
+            }
+            Err(e) => {
+                format!("ERROR: invalid id {}", e)  // TODO: Do things properly (set error code ...)
+            }
+        }
+    });
+
+    let clone = sender.clone();
+    server.get("/instances/:id/entities", middleware! { |request|
+        // id is part of the route, the unwrap should never fail
+        let id = request.param("id").unwrap();
+        match id.parse::<u64>() {
+            Ok(parsed) => {
+                let entities = define_request_instance!(clone, parsed, |instance| {
+                    instance.get_entities()
+                });
+                let json = to_string_pretty(&entities).unwrap();
                 json
             }
             Err(e) => {

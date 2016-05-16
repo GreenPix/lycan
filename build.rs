@@ -6,6 +6,7 @@ use std::path::Path;
 use std::fs::DirBuilder;
 
 const FILES: &'static [&'static str] = &[
+    "src/data/management.rs.in",
     "src/data/player.rs.in",
     "src/data/map.rs.in",
 ];

@@ -6,8 +6,15 @@ use nalgebra::{Pnt2,Vec2};
 use rand;
 
 use id::{Id,HasForgeableId};
-use data::{Map,Player,Stats,Position};
+use data::{
+    Map,Player,Stats,Position,
+    EntityManagement, PositionInstance,
+    PlayerStruct, MonsterStruct,
+    EntityType as DataEntityType,
+};
 use messages::{EntityState};
+use instance::Instance;
+
 use self::hitbox::RectangleHitbox;
 pub use self::double_iterator::{DoubleIterMut,OthersAccessor,OthersIter,OthersIterMut};
 pub use self::store::EntityStore;
@@ -237,6 +244,45 @@ impl Entity {
         // TODO: Presence ...
         try!(writeln!(f, "{}{:?} {:?} {:?}", indent, self.position, self.speed,self.orientation));
         writeln!(f, "{}PV: {}", indent, self.pv)
+    }
+
+    // XXX: Should we really pass instance_id and map?
+    pub fn into_management_representation(&self, instance_id: Id<Instance>, map: Id<Map>)
+    -> EntityManagement {
+        let position = PositionInstance {
+            x: self.position.x,
+            y: self.position.y,
+            map: map,
+            instance: instance_id.as_u64(),
+        };
+        let entity_type = match self.e_type {
+            EntityType::Player(ref player) => {
+                let player_struct = PlayerStruct {
+                    id: player.id.as_u64(),
+                    name: player.name.clone(),
+                    gold: player.gold,
+                    guild: player.guild.clone(),
+                    experience: player.experience,
+                };
+                DataEntityType::Player(player_struct)
+            }
+            EntityType::Invoked(_) => {
+                let monster_struct = MonsterStruct {
+                    id: 0,
+                    name: "TODO".to_string(),
+                    behaviour_tree: "TODO".to_string(),
+                };
+                DataEntityType::Monster(monster_struct)
+            }
+        };
+        EntityManagement {
+            id: self.id.as_u64(),
+            entity_type: entity_type,
+            skin: self.skin,
+            current_pv: self.pv,
+            position: position,
+            stats: self.base_stats,
+        }
     }
 }
 

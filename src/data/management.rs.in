@@ -1,0 +1,47 @@
+
+use data::player::{Stats};
+use id::{Id,HasForgeableId};
+use data::Map;
+
+// Representation of an entity in the management API
+#[derive(Serialize,Debug,Clone)]
+pub struct EntityManagement {
+    pub id: u64,
+    #[serde(rename="type")]
+    pub entity_type: EntityType,
+    pub skin: u64,
+    pub current_pv: u64,
+    pub position: PositionInstance,
+    pub stats: Stats,
+}
+
+#[derive(Serialize,Debug,Clone)]
+pub enum EntityType {
+    Player(PlayerStruct),
+    Monster(MonsterStruct),
+}
+
+#[derive(Serialize,Debug,Clone)]
+pub struct PlayerStruct {
+    pub id: u64,
+    pub name: String,
+    pub gold: u64,
+    pub experience: u64,
+    pub guild: String,
+}
+
+#[derive(Serialize,Debug,Clone)]
+pub struct MonsterStruct {
+    pub id: u64,
+    pub name: String,
+    pub behaviour_tree: String,
+}
+
+// Same as data::Position but with instance information
+#[derive(Serialize,Debug,Clone,Copy)]
+pub struct PositionInstance {
+    pub map: Id<Map>,
+    pub x: f32,
+    pub y: f32,
+    pub instance: u64,
+}

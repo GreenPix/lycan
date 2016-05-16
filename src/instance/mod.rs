@@ -14,6 +14,9 @@ use actor::{NetworkActor,ActorId,AiActor};
 use messages::{self,Command,Notification,Request};
 use network::Message;
 use scripts::{BehaviourTrees,AaribaScripts};
+use data::Map;
+
+mod management;
 
 lazy_static! {
     // 16.666 ms (60 Hz)
@@ -150,6 +153,7 @@ impl Actors {
 pub struct Instance {
     id: Id<Instance>,
 
+    map_id: Id<Map>,
     entities: EntityStore,
     actors: Actors,
     request: Sender<Request>,
@@ -170,8 +174,9 @@ impl Instance {
     pub fn spawn_instance(request: Sender<Request>,
                           scripts: AaribaScripts,
                           trees: BehaviourTrees,
+                          map_id: Id<Map>,
                           ) -> (Id<Self>, Sender<Command>) {
-        let mut instance = Instance::new(request, scripts, trees);
+        let mut instance = Instance::new(request, scripts, trees, map_id);
         let mut config = EventLoopConfig::default();
         config.timer_tick_ms((instance.refresh_period.num_milliseconds() / 2) as u64);
         let mut event_loop = EventLoop::configured(config).unwrap();
@@ -192,9 +197,11 @@ impl Instance {
     fn new(request: Sender<Request>,
            scripts: AaribaScripts,
            trees: BehaviourTrees,
+           map_id: Id<Map>,
            ) -> Instance {
         let mut instance = Instance {
             id: Id::new(),
+            map_id: map_id,
             entities: EntityStore::new(),
             actors: Default::default(),
             request: request,

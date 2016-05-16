@@ -191,6 +191,7 @@ impl Game {
                             event_loop.channel(),
                             self.scripts.clone(),
                             self.trees.clone(),
+                            map,
                             );
                         instance.send(Command::NewClient(actor,entities)).unwrap();
                         Some((id, instance))

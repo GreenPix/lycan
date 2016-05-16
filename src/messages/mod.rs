@@ -37,8 +37,7 @@ impl Command {
     /// Should only be used for debugging or testing
     pub fn new<T>(closure: T) -> Command
     where T: FnOnce(&mut Instance, &mut EventLoop<Instance>),
-          T: Send + 'static,
-          T: Handler {
+          T: Send + 'static {
         let command = Arbitrary(Box::new(closure));
         Command::Arbitrary(command)
     }
