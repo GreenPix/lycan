@@ -216,7 +216,7 @@ impl Instance {
         };
 
         // XXX Fake an AI on the map
-        instance.add_fake_ai();
+        instance.add_fake_ai(0.0, 0.0);
         instance
     }
 
@@ -404,13 +404,15 @@ impl Instance {
         mem::swap(&mut self.prev_notifications, &mut self.next_notifications);
     }
 
-    fn add_fake_ai(&mut self) {
+    fn add_fake_ai(&mut self, x: f32, y: f32) -> Id<Entity> {
         let ai = AiActor::fake(self.trees.generate_tree("zombie").unwrap());
         let id = ai.get_id();
         self.actors.register_internal(ai);
 
-        let entity = Entity::fake_ai();
+        let entity = Entity::fake_ai(x, y);
+        let entity_id = entity.get_id();
         self.assign_entity_to_actor(id, entity);
+        entity_id
     }
 }
 

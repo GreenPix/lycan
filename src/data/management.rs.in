@@ -45,3 +45,12 @@ pub struct PositionInstance {
     pub y: f32,
     pub instance: u64,
 }
+
+#[derive(Deserialize,Debug,Clone,Copy)]
+pub struct SpawnMonster {
+    pub monster_class: u64,
+    #[serde(default)]
+    pub x: f32,
+    #[serde(default)]
+    pub y: f32,
+}

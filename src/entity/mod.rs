@@ -189,7 +189,7 @@ impl Entity {
         Entity::from(player)
     }
 
-    pub fn fake_ai() -> Entity {
+    pub fn fake_ai(x: f32, y: f32) -> Entity {
         let stats = Stats {
             level:          1,
             strength:       2,
@@ -202,7 +202,7 @@ impl Entity {
         let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
         Entity::new(
             EntityType::Invoked(None),
-            Pnt2::new(1.0, 1.0),
+            Pnt2::new(x, y),
             Direction::South,
             skin,
             stats,

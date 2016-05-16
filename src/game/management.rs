@@ -118,6 +118,27 @@ fn add_management_routes(server: &mut Nickel, sender: MioSender<LycanRequest>) {
     });
 
     let clone = sender.clone();
+    fn monster_spawn(sender: &MioSender<LycanRequest>, request: &mut ::nickel::Request) -> Result<String,String> {
+        use data::SpawnMonster;
+        use serde_json;
+        // id is part of the route, the unwrap should never fail
+        let monster: SpawnMonster = try!(serde_json::from_reader(&mut request.origin).map_err(|e| format!("ERROR: bad input {}", e)));
+        let id = request.param("id").unwrap();
+        let id_parsed = try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid id {}", e)));
+        let monster = define_request_instance!(sender, id_parsed, |instance| {
+            instance.spawn_monster(monster)
+        });
+        let json = to_string_pretty(&monster).unwrap();
+        Ok(json)
+    }
+    server.post("/instances/:id/spawn", middleware! { |request|
+        match monster_spawn(&clone, request) {
+            Ok(s) => s,
+            Err(s) => s,
+        }
+    });
+
+    let clone = sender.clone();
     server.post("/shutdown", middleware! {
         define_request!(clone, |g, el| {
             g.start_shutdown(el);
