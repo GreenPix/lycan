@@ -13,6 +13,12 @@ use messages::Request as LycanRequest;
 use messages::Command;
 use data::Map;
 
+// TODO
+// - Set correct headers in all responses
+// - Check if correct heahers are set (e.g. Content-Type)
+// - Authentication of each request
+// - Do proper error handling
+
 #[derive(Debug,RustcDecodable)]
 struct AuthenticatedRequest<T> {
     secret: String,
@@ -167,6 +173,28 @@ fn add_management_routes(server: &mut Nickel, sender: MioSender<LycanRequest>) {
                 debug!("Error while parsing body for /connect_character: {}", e);
                 Err(e.to_string())
             }
+        }
+    });
+
+    let clone = sender.clone();
+    fn entity_delete(sender: &MioSender<LycanRequest>, request: &mut ::nickel::Request) -> Result<(),String> {
+        let instance_id = {
+            let id = request.param("instance_id").unwrap();
+            try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid instance id {}", e)))
+        };
+        let entity_id = {
+            let id = request.param("entity_id").unwrap();
+            try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid entity id {}", e)))
+        };
+        let result = define_request_instance!(sender, instance_id, |instance| {
+            instance.remove_entity(entity_id)
+        });
+        result.map_err(|_| format!("ERROR: Entity {} not found in instance {}", entity_id, instance_id))
+    }
+    server.delete("/instances/:instance_id/entities/:entity_id", middleware! { |request|
+        match entity_delete(&clone, request) {
+            Ok(()) => "OK".to_string(),
+            Err(s) => s,
         }
     });
 }
