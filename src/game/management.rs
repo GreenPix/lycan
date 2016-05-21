@@ -70,6 +70,7 @@ macro_rules! define_request_instance {
             let _ = instance.send(command);
         });
         $sender.send(request).unwrap();
+        // XXX: This can panic if the instance does not exist!
         rx.recv().unwrap().unwrap()
     }};
     ($sender:ident, $id:ident, |$instance:ident| $bl:block) => {

@@ -5,6 +5,7 @@ use data::{
 };
 use id::WeakId;
 use entity::Entity;
+use messages::Notification;
 
 impl Instance {
     pub fn get_entities(&self) -> Vec<EntityManagement> {
@@ -26,7 +27,8 @@ impl Instance {
             Some(_e) => {
                 // Send back to game?
 
-                // TODO: Notification of entity leaving
+                let notification = Notification::entity_has_quit(entity.as_u64());
+                self.next_notifications.push(notification);
                 // TODO: Kick corresponding actor
                 Ok(())
             }
