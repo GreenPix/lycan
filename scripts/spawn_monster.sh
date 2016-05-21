@@ -5,7 +5,7 @@ Y="0.0"
 
 print_syntax() {
 cat << EOF
-Usage $0 [-h SERVERNAME] [-s SECRET] instance_id
+Usage $0 [-h SERVERNAME] [-x X] [-y Y] instance_id
 EOF
 }
 
@@ -15,10 +15,10 @@ while getopts h:x:y: opt; do
                         SERVER=$OPTARG
                         ;;
                 x)
-                        Y=$OPTARG
+                        X=$OPTARG
                         ;;
                 y)
-                        X=$OPTARG
+                        Y=$OPTARG
                         ;;
                 \?)
                         print_syntax
