@@ -58,6 +58,18 @@ impl<T> WeakId<T> {
     }
 }
 
+impl<T> From<u64> for WeakId<T> {
+    fn from(id: u64) -> WeakId<T> {
+        WeakId::new(id)
+    }
+}
+
+impl<T> From<Id<T>> for WeakId<T> {
+    fn from(id: Id<T>) -> WeakId<T> {
+        id.inner
+    }
+}
+
 impl <T> Borrow<WeakId<T>> for Id<T> {
     fn borrow(&self) -> &WeakId<T> {
         &self.inner

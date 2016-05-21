@@ -8,10 +8,12 @@ use nickel::JsonBody;
 
 use lycan_serialize::AuthenticationToken;
 
-use id::Id;
+use id::{Id,WeakId};
 use messages::Request as LycanRequest;
 use messages::Command;
 use data::Map;
+use entity::Entity;
+use instance::management::*;
 
 // TODO
 // - Set correct headers in all responses
@@ -182,14 +184,19 @@ fn add_management_routes(server: &mut Nickel, sender: MioSender<LycanRequest>) {
             let id = request.param("instance_id").unwrap();
             try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid instance id {}", e)))
         };
-        let entity_id = {
+        let entity_id: WeakId<Entity> = {
             let id = request.param("entity_id").unwrap();
-            try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid entity id {}", e)))
+            try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid entity id {}", e))).into()
         };
         let result = define_request_instance!(sender, instance_id, |instance| {
             instance.remove_entity(entity_id)
         });
-        result.map_err(|_| format!("ERROR: Entity {} not found in instance {}", entity_id, instance_id))
+        result.map_err(|e| {
+            match e {
+                RemoveEntityError::NotFound => format!("ERROR: Entity {} not found in instance {}", entity_id, instance_id),
+                RemoveEntityError::IsPlayer => format!("ERROR: Entity {} is a player", entity_id),
+            }
+        })
     }
     server.delete("/instances/:instance_id/entities/:entity_id", middleware! { |request|
         match entity_delete(&clone, request) {

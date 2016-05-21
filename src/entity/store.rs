@@ -1,4 +1,4 @@
-use id::Id;
+use id::{Id, WeakId};
 use super::Entity;
 use super::{OthersAccessor,DoubleIterMut};
 
@@ -19,8 +19,8 @@ impl EntityStore {
         self.entities.push(entity)
     }
 
-    pub fn remove(&mut self, id: Id<Entity>) -> Option<Entity> {
-        let position = match self.get_position(id) {
+    pub fn remove<T: Into<WeakId<Entity>>>(&mut self, id: T) -> Option<Entity> {
+        let position = match self.get_position(id.into()) {
             Some(pos) => pos,
             None => return None,
         };
@@ -28,23 +28,38 @@ impl EntityStore {
         Some(self.entities.remove(position))
     }
 
-    pub fn get(&self, id: Id<Entity>) -> Option<&Entity> {
-        self.get_position(id).map(move |position| self.entities.get(position).unwrap())
+    pub fn remove_if<T,F>(&mut self, id: T, f: F) -> Option<Entity>
+    where T: Into<WeakId<Entity>>,
+          F: FnOnce(&Entity) -> bool {
+        let position = match self.get_position(id.into()) {
+            Some(pos) => pos,
+            None => return None,
+        };
+
+        if f(self.entities.get(position).unwrap()) {
+            Some(self.entities.remove(position))
+        } else {
+            None
+        }
     }
 
-    pub fn get_mut(&mut self, id: Id<Entity>) -> Option<&mut Entity> {
-        self.get_position(id).map(move |position| self.entities.get_mut(position).unwrap())
+    pub fn get<T: Into<WeakId<Entity>>>(&self, id: T) -> Option<&Entity> {
+        self.get_position(id.into()).map(move |position| self.entities.get(position).unwrap())
     }
 
-    pub fn get_mut_wrapper<'a>(&'a mut self, id: Id<Entity>) -> Option<(&'a mut Entity, OthersAccessor<'a>)> {
-        self.get_position(id).map(move |position| {
+    pub fn get_mut<T: Into<WeakId<Entity>>>(&mut self, id: T) -> Option<&mut Entity> {
+        self.get_position(id.into()).map(move |position| self.entities.get_mut(position).unwrap())
+    }
+
+    pub fn get_mut_wrapper<'a,T: Into<WeakId<Entity>>>(&'a mut self, id: T) -> Option<(&'a mut Entity, OthersAccessor<'a>)> {
+        self.get_position(id.into()).map(move |position| {
             OthersAccessor::new(&mut self.entities, position).unwrap()
         })
     }
 
-    fn get_position(&self, id: Id<Entity>) -> Option<usize> {
+    fn get_position(&self, id: WeakId<Entity>) -> Option<usize> {
         for (position, entity) in self.entities.iter().enumerate() {
-            if entity.get_id() == id {
+            if WeakId::from(entity.get_id()) == id {
                 return Some(position);
             }
         }

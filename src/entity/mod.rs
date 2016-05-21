@@ -117,6 +117,22 @@ impl Entity {
         &self.e_type
     }
 
+    pub fn is_player(&self) -> bool {
+        if let EntityType::Player(_) = self.e_type {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_monster(&self) -> bool {
+        if let EntityType::Invoked(_) = self.e_type {
+            true
+        } else {
+            false
+        }
+    }
+
     // Takes effects into account
     pub fn recompute_current_stats(&mut self) {
         let speed = match self.e_type {

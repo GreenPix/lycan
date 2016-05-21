@@ -16,7 +16,7 @@ use network::Message;
 use scripts::{BehaviourTrees,AaribaScripts};
 use data::Map;
 
-mod management;
+pub mod management;
 
 lazy_static! {
     // 16.666 ms (60 Hz)
