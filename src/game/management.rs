@@ -78,8 +78,7 @@ macro_rules! define_request_instance {
             let _ = instance.send(command);
         });
         $sender.send(request).unwrap();
-        // XXX: This can panic if the instance does not exist!
-        rx.recv().unwrap().unwrap()
+        rx.recv().unwrap()
     }};
     ($sender:ident, $id:ident, |$instance:ident| $bl:block) => {
         define_request_instance!($sender, $id, |$instance, _event_loop| $bl)
@@ -125,9 +124,10 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
         let params = request.extensions.get::<Router>().unwrap();
         let id = &params["id"];
         let parsed = itry_map!(id.parse::<u64>(), |e| (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
-        let entities = define_request_instance!(clone, parsed, |instance| {
+        let entities = itry_map!(define_request_instance!(clone, parsed, |instance| {
             instance.get_entities()
-        });
+            }),
+            |_e| (Status::BadRequest, format!("ERROR: Non existent instance id {}", parsed)));
         let json = to_string_pretty(&entities).unwrap();
         Ok(Response::with((Status::Ok,json)))
     }));
@@ -150,9 +150,11 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
                                           (Status::BadRequest, format!("ERROR: JSON decoding error: {}", e)));
             parsed_monster = iexpect!(maybe_monster, (Status::BadRequest, "ERROR: No JSON body provided"));
         }
-        let monster = define_request_instance!(clone, id_parsed, |instance| {
-            instance.spawn_monster(parsed_monster)
-        });
+        let monster = itry_map!(
+            define_request_instance!(clone, id_parsed, |instance| {
+                instance.spawn_monster(parsed_monster)
+            }),
+            |_e| (Status::BadRequest, format!("ERROR: Non existent instance id {}", id_parsed)));
         let json = to_string_pretty(&monster).unwrap();
         Ok(Response::with((Status::Ok,json)))
     }));
@@ -191,9 +193,9 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
             let id = &params["entity_id"];
             try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid entity id {}: {}", id, e))).into()
         };
-        let result = define_request_instance!(sender, instance_id, |instance| {
+        let result = try!(define_request_instance!(sender, instance_id, |instance| {
             instance.remove_entity(entity_id)
-        });
+        }).map_err(|_e| format!("ERROR: Non existent instance id {}", instance_id)));
         result.map_err(|e| {
             match e {
                 RemoveEntityError::NotFound => format!("ERROR: Entity {} not found in instance {}", entity_id, instance_id),
