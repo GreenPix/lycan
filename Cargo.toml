@@ -21,11 +21,14 @@ docopt = "0.6"
 nalgebra = "0.5"
 smallvec = "0.1"
 rand = "0.3"
-hyper = "0.6.16"
+hyper = "0.8"
 bytes = "0.3"
 serde = "0.7"
 serde_json = "0.7"
-nickel = "0.7"
+iron = "0.3"
+router = "*"
+bodyparser = "*"
+plugin = "*"
 
 [build-dependencies]
 serde_codegen = "*"
@@ -47,4 +50,4 @@ doc = false
 [features]
 json = ["lycan-serialize/json"]
 
-default = ["json"]
+default = ["json", "iron/ssl"]

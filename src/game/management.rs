@@ -2,16 +2,19 @@ use std::thread;
 use std::sync::mpsc::{self,Sender};
 
 use mio::Sender as MioSender;
-use nickel::{Nickel,HttpRouter};
 use serde_json::ser::to_string_pretty;
-use nickel::JsonBody;
+use iron::prelude::*;
+use iron::status::Status;
+use bodyparser::Struct;
+use router::{Router};
+use plugin::Extensible;
 
 use lycan_serialize::AuthenticationToken;
 
 use id::{Id,WeakId};
 use messages::Request as LycanRequest;
 use messages::Command;
-use data::Map;
+use data::{ConnectCharacterParam,AuthenticatedRequest,Map};
 use entity::Entity;
 use instance::management::*;
 
@@ -21,18 +24,23 @@ use instance::management::*;
 // - Authentication of each request
 // - Do proper error handling
 
-#[derive(Debug,RustcDecodable)]
-struct AuthenticatedRequest<T> {
-    secret: String,
-    params: T,
+macro_rules! itry_map {
+    ($result:expr, |$err:ident| $bl:expr) => {
+        match $result {
+            ::std::result::Result::Ok(val) => val,
+            ::std::result::Result::Err($err) => {
+                return Ok(::iron::response::Response::with($bl));
+            }
+        }
+    };
 }
 
 pub fn start_management_api(sender: MioSender<LycanRequest>) {
     thread::spawn(move || {
-        let mut server = Nickel::new();
-        add_management_routes(&mut server, sender);
+        let router = create_router(sender);
+        let iron = Iron::new(router);
 
-        server.listen("127.0.0.1:8001");
+        iron.http("127.0.0.1:8001").unwrap();
     });
 }
 
@@ -78,116 +86,110 @@ macro_rules! define_request_instance {
     };
 }
 
-fn add_management_routes(server: &mut Nickel, sender: MioSender<LycanRequest>) {
+// The Rust typechecker doesn't seem to get the types of the closures right
+// It infers that they implement FnOnce(...), and therefore do not implement Handler
+// This function forces the type of the closure
+fn correct_bounds<F>(f: F) -> F
+where F: Send + Sync + 'static + Fn(&mut Request) -> IronResult<Response>
+{f}
+
+fn create_router(sender: MioSender<LycanRequest>) -> Router {
+    let mut server = Router::new();
     // TODO: Add middleware at the beginning for authentication of requests
 
     let clone = sender.clone();
-    server.get("/maps", middleware! {
+    server.get("/maps", correct_bounds(move |_request| {
         let maps = define_request!(clone, |game| {
             game.resource_manager.get_all_maps()
         });
         let json = to_string_pretty(&maps).unwrap();
-        json
-    });
+        Ok(Response::with((Status::Ok,json)))
+    }));
 
     let clone = sender.clone();
-    server.get("/maps/:id/instances", middleware! { |request|
+    server.get("/maps/:id/instances", correct_bounds(move |request| {
+        let params = request.extensions.get::<Router>().unwrap();
         // id is part of the route, the unwrap should never fail
-        let id = request.param("id").unwrap();
-        match id.parse::<u64>() {
-            Ok(parsed) => {
-                let instances = define_request!(clone, |game| {
-                    game.get_instances(Id::forge(parsed))
-                });
-                let json = to_string_pretty(&instances).unwrap();
-                json
-            }
-            Err(e) => {
-                format!("ERROR: invalid id {}", e)  // TODO: Do things properly (set error code ...)
-            }
-        }
-    });
+        let id = &params["id"];
+        let parsed = itry_map!(id.parse::<u64>(), |e| (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
+        let instances = define_request!(clone, |game| {
+            game.get_instances(Id::forge(parsed))
+        });
+        let json = to_string_pretty(&instances).unwrap();
+        Ok(Response::with((Status::Ok,json)))
+    }));
 
     let clone = sender.clone();
-    server.get("/instances/:id/entities", middleware! { |request|
+    server.get("/instances/:id/entities", correct_bounds(move |request| {
         // id is part of the route, the unwrap should never fail
-        let id = request.param("id").unwrap();
-        match id.parse::<u64>() {
-            Ok(parsed) => {
-                let entities = define_request_instance!(clone, parsed, |instance| {
-                    instance.get_entities()
-                });
-                let json = to_string_pretty(&entities).unwrap();
-                json
-            }
-            Err(e) => {
-                format!("ERROR: invalid id {}", e)  // TODO: Do things properly (set error code ...)
-            }
-        }
-    });
+        let params = request.extensions.get::<Router>().unwrap();
+        let id = &params["id"];
+        let parsed = itry_map!(id.parse::<u64>(), |e| (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
+        let entities = define_request_instance!(clone, parsed, |instance| {
+            instance.get_entities()
+        });
+        let json = to_string_pretty(&entities).unwrap();
+        Ok(Response::with((Status::Ok,json)))
+    }));
 
     let clone = sender.clone();
-    fn monster_spawn(sender: &MioSender<LycanRequest>, request: &mut ::nickel::Request) -> Result<String,String> {
+
+    server.post("/instances/:id/spawn", correct_bounds(move |request| {
         use data::SpawnMonster;
-        use serde_json;
-        // id is part of the route, the unwrap should never fail
-        let monster: SpawnMonster = try!(serde_json::from_reader(&mut request.origin).map_err(|e| format!("ERROR: bad input {}", e)));
-        let id = request.param("id").unwrap();
-        let id_parsed = try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid id {}", e)));
-        let monster = define_request_instance!(sender, id_parsed, |instance| {
-            instance.spawn_monster(monster)
+        let (id_parsed, parsed_monster);
+
+        {
+            let params = request.extensions.get::<Router>().unwrap();
+            // id is part of the route, the unwrap should never fail
+            let id = &params["id"];
+            id_parsed = itry_map!(id.parse::<u64>(), |e|
+                                  (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
+        }
+        {
+            let maybe_monster = itry_map!(request.get::<Struct<SpawnMonster>>(), |e|
+                                          (Status::BadRequest, format!("ERROR: JSON decoding error: {}", e)));
+            parsed_monster = iexpect!(maybe_monster, (Status::BadRequest, "ERROR: No JSON body provided"));
+        }
+        let monster = define_request_instance!(clone, id_parsed, |instance| {
+            instance.spawn_monster(parsed_monster)
         });
         let json = to_string_pretty(&monster).unwrap();
-        Ok(json)
-    }
-    server.post("/instances/:id/spawn", middleware! { |request|
-        match monster_spawn(&clone, request) {
-            Ok(s) => s,
-            Err(s) => s,
-        }
-    });
+        Ok(Response::with((Status::Ok,json)))
+    }));
 
     let clone = sender.clone();
-    server.post("/shutdown", middleware! {
+    server.post("/shutdown", correct_bounds(move |_request| {
         define_request!(clone, |g, el| {
             g.start_shutdown(el);
         });
-        "OK"
-    });
+        Ok(Response::with((Status::Ok, "OK")))
+    }));
 
     let clone = sender.clone();
-    #[derive(Debug,RustcDecodable)]
-    struct ConnectCharacterParam {
-        token: String,
-        id: u64,
-    }
-    server.post("/connect_character", middleware! { |request|
-        match request.json_as::<AuthenticatedRequest<ConnectCharacterParam>>() {
-            Ok(decoded) => {
-                debug!("Received request to /connect_character: {:?}", decoded);
-                define_request!(clone, |game| {
-                    let id = Id::forge(decoded.params.id);
-                    let token = AuthenticationToken(decoded.params.token);
-                    game.connect_character(id, token);
-                });
-                Ok("OK")
-            }
-            Err(e) => {
-                debug!("Error while parsing body for /connect_character: {}", e);
-                Err(e.to_string())
-            }
-        }
-    });
+    server.post("/connect_character", correct_bounds(move |request| {
+        let maybe_params = itry_map!(request.get::<Struct<AuthenticatedRequest<ConnectCharacterParam>>>(), |e|
+                                     (Status::BadRequest, format!("ERROR: JSON decoding error: {}", e)));
+        let decoded = iexpect!(maybe_params, (Status::BadRequest, "ERROR: No JSON body provided"));
+        debug!("Received request to /connect_character: {:?}", decoded);
+        define_request!(clone, |game| {
+            let id = Id::forge(decoded.params.id);
+            let token = AuthenticationToken(decoded.params.token);
+            game.connect_character(id, token);
+        });
+        Ok(Response::with((Status::Ok, "OK")))
+    }));
 
     let clone = sender.clone();
-    fn entity_delete(sender: &MioSender<LycanRequest>, request: &mut ::nickel::Request) -> Result<(),String> {
+    fn entity_delete(sender: &MioSender<LycanRequest>, request: &mut Request) -> Result<(),String> {
+        let params = request.extensions.get::<Router>().unwrap();
+        // id is part of the route, the unwrap should never fail
         let instance_id = {
-            let id = request.param("instance_id").unwrap();
-            try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid instance id {}", e)))
+            let id = &params["instance_id"];
+            try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid instance id {}: {}", id, e)))
         };
         let entity_id: WeakId<Entity> = {
-            let id = request.param("entity_id").unwrap();
-            try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid entity id {}", e))).into()
+            let id = &params["entity_id"];
+            try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid entity id {}: {}", id, e))).into()
         };
         let result = define_request_instance!(sender, instance_id, |instance| {
             instance.remove_entity(entity_id)
@@ -199,10 +201,12 @@ fn add_management_routes(server: &mut Nickel, sender: MioSender<LycanRequest>) {
             }
         })
     }
-    server.delete("/instances/:instance_id/entities/:entity_id", middleware! { |request|
+    server.delete("/instances/:instance_id/entities/:entity_id", correct_bounds(move |request| {
         match entity_delete(&clone, request) {
-            Ok(()) => "OK".to_string(),
-            Err(s) => s,
+            Ok(()) => Ok(Response::with((Status::Ok,"OK"))),
+            Err(s) => Ok(Response::with((Status::BadRequest, s))),
         }
-    });
+    }));
+
+    server
 }

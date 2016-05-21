@@ -54,3 +54,15 @@ pub struct SpawnMonster {
     #[serde(default)]
     pub y: f32,
 }
+
+#[derive(Deserialize,Debug,Clone)]
+pub struct ConnectCharacterParam {
+    pub token: String,
+    pub id: u64,
+}
+
+#[derive(Deserialize,Debug,Clone)]
+pub struct AuthenticatedRequest<T> {
+    pub secret: String,
+    pub params: T,
+}

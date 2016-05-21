@@ -21,7 +21,12 @@ extern crate bytes;
 extern crate behaviour_tree;
 extern crate serde;
 extern crate serde_json;
-#[macro_use] extern crate nickel;
+
+// Iron and related crates
+#[macro_use] extern crate iron;
+extern crate router;
+extern crate bodyparser;
+extern crate plugin;
 
 pub mod actor;
 pub mod entity;
