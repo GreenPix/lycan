@@ -25,10 +25,13 @@ hyper = "0.8"
 bytes = "0.3"
 serde = "0.7"
 serde_json = "0.7"
+
+# Iron and related crates
 iron = "0.3"
 router = "*"
 bodyparser = "*"
 plugin = "*"
+modifier = "*"
 
 [build-dependencies]
 serde_codegen = "*"

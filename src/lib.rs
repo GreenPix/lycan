@@ -27,6 +27,7 @@ extern crate serde_json;
 extern crate router;
 extern crate bodyparser;
 extern crate plugin;
+extern crate modifier;
 
 pub mod actor;
 pub mod entity;

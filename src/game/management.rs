@@ -2,12 +2,15 @@ use std::thread;
 use std::sync::mpsc::{self,Sender};
 
 use mio::Sender as MioSender;
-use serde_json::ser::to_string_pretty;
+use serde_json::ser::to_vec_pretty;
+use serde::Serialize;
 use iron::prelude::*;
 use iron::status::Status;
+use iron::headers::ContentType;
 use bodyparser::Struct;
 use router::{Router};
 use plugin::Extensible;
+use modifier::Modifier;
 
 use lycan_serialize::AuthenticationToken;
 
@@ -101,8 +104,7 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
         let maps = define_request!(clone, |game| {
             game.resource_manager.get_all_maps()
         });
-        let json = to_string_pretty(&maps).unwrap();
-        Ok(Response::with((Status::Ok,json)))
+        Ok(Response::with((Status::Ok,JsonWriter(maps))))
     }));
 
     let clone = sender.clone();
@@ -114,8 +116,7 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
         let instances = define_request!(clone, |game| {
             game.get_instances(Id::forge(parsed))
         });
-        let json = to_string_pretty(&instances).unwrap();
-        Ok(Response::with((Status::Ok,json)))
+        Ok(Response::with((Status::Ok,JsonWriter(instances))))
     }));
 
     let clone = sender.clone();
@@ -128,8 +129,7 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
             instance.get_entities()
             }),
             |_e| (Status::BadRequest, format!("ERROR: Non existent instance id {}", parsed)));
-        let json = to_string_pretty(&entities).unwrap();
-        Ok(Response::with((Status::Ok,json)))
+        Ok(Response::with((Status::Ok,JsonWriter(entities))))
     }));
 
     let clone = sender.clone();
@@ -155,8 +155,7 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
                 instance.spawn_monster(parsed_monster)
             }),
             |_e| (Status::BadRequest, format!("ERROR: Non existent instance id {}", id_parsed)));
-        let json = to_string_pretty(&monster).unwrap();
-        Ok(Response::with((Status::Ok,json)))
+        Ok(Response::with((Status::Ok,JsonWriter(monster))))
     }));
 
     let clone = sender.clone();
@@ -169,13 +168,13 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
 
     let clone = sender.clone();
     server.post("/connect_character", correct_bounds(move |request| {
-        let maybe_params = itry_map!(request.get::<Struct<AuthenticatedRequest<ConnectCharacterParam>>>(), |e|
+        let maybe_params = itry_map!(request.get::<Struct<ConnectCharacterParam>>(), |e|
                                      (Status::BadRequest, format!("ERROR: JSON decoding error: {}", e)));
         let decoded = iexpect!(maybe_params, (Status::BadRequest, "ERROR: No JSON body provided"));
         debug!("Received request to /connect_character: {:?}", decoded);
         define_request!(clone, |game| {
-            let id = Id::forge(decoded.params.id);
-            let token = AuthenticationToken(decoded.params.token);
+            let id = Id::forge(decoded.id);
+            let token = AuthenticationToken(decoded.token);
             game.connect_character(id, token);
         });
         Ok(Response::with((Status::Ok, "OK")))
@@ -211,4 +210,22 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
     }));
 
     server
+}
+
+struct JsonWriter<T>(T);
+
+impl <T: Serialize> Modifier<Response> for JsonWriter<T> {
+    fn modify(self, response: &mut Response) {
+        match to_vec_pretty(&self.0) {
+            Ok(v) => {
+                response.headers.set(ContentType::json());
+                v.modify(response);
+            }
+            Err(e) => {
+                let err = format!("ERROR: JSON serialization error {}", e);
+                let modifier = (Status::InternalServerError, err);
+                modifier.modify(response);
+            }
+        }
+    }
 }
