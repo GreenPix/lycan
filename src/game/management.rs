@@ -33,8 +33,16 @@ pub fn start_management_api(sender: MioSender<LycanRequest>) {
         let router = create_router(sender);
         let mut chain = Chain::new(router);
         chain.link_before(AuthenticationMiddleware("abcdefgh".to_string()));
-        let iron = Iron::new(chain);
+        let mut error_router = ::iron_error_router::ErrorRouter::new();
+        error_router.handle_status(Status::NotFound, |_: &mut Request| {
+            Ok(Response::with((Status::NotFound, "404: Not Found")))
+        });
+        error_router.handle_status(Status::Unauthorized, |_: &mut Request| {
+            Ok(Response::with((Status::Unauthorized, "401: Unauthorized")))
+        });
+        chain.link_after(error_router);
 
+        let iron = Iron::new(chain);
         iron.http("127.0.0.1:8001").unwrap();
     });
 }

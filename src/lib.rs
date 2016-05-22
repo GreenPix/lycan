@@ -28,6 +28,7 @@ extern crate router;
 extern crate bodyparser;
 extern crate plugin;
 extern crate modifier;
+extern crate iron_error_router;
 
 pub mod actor;
 pub mod entity;

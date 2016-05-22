@@ -32,6 +32,7 @@ router = "*"
 bodyparser = "*"
 plugin = "*"
 modifier = "*"
+iron-error-router = "*"
 
 [build-dependencies]
 serde_codegen = "*"
