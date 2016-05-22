@@ -1,22 +1,18 @@
 #! /bin/bash
 DEFAULT_SERVER=localhost
 DEFAULT_PORT=8001
-DEFAULT_SECRET="abcdefgh"
 
 print_syntax() {
 cat << EOF
-Usage $0 [-h SERVER] [-p PORT] [-s SECRET] id token
-SERVER, PORT and SECRET can also be provided as environment variables
+Usage $0 [-h SERVER] [-p PORT]
+SERVER and PORT can also be provided as environment variables
 EOF
 }
 
-while getopts h:p:s: opt; do
+while getopts h:p: opt; do
         case $opt in
                 h)
                         SERVER=$OPTARG
-                        ;;
-                s)
-                        SECRET=$OPTARG
                         ;;
                 p)
                         PORT=$OPTARG
@@ -33,21 +29,10 @@ while getopts h:p:s: opt; do
 done
 shift $((OPTIND-1))
 
-if (( $# != 2 )); then
+if (( $# != 0 )); then
         print_syntax
         exit 1
 fi
 BASE_URL=http://${SERVER-$DEFAULT_SERVER}:${PORT-$DEFAULT_PORT}
 
-ID=$1
-TOKEN=$2
-
-curl -d @- -X POST -H "Content-Type: application/json" $BASE_URL/connect_character << EOF
-{
-        "secret": "${SECRET-$DEFAULT_SECRET}",
-        "params": {
-                "id": $ID,
-                "token": "$TOKEN"
-        }
-}
-EOF
+curl -X GET -H "Content-Type: application/json" $BASE_URL/maps
