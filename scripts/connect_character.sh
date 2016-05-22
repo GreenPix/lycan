@@ -42,12 +42,9 @@ BASE_URL=http://${SERVER-$DEFAULT_SERVER}:${PORT-$DEFAULT_PORT}
 ID=$1
 TOKEN=$2
 
-curl -d @- -X POST -H "Content-Type: application/json" $BASE_URL/connect_character << EOF
+curl -d @- -X POST -H "Access-Token: ${SECRET-$DEFAULT_SECRET}" -H "Content-Type: application/json" $BASE_URL/connect_character << EOF
 {
-        "secret": "${SECRET-$DEFAULT_SECRET}",
-        "params": {
-                "id": $ID,
-                "token": "$TOKEN"
-        }
+        "id": $ID,
+        "token": "$TOKEN"
 }
 EOF

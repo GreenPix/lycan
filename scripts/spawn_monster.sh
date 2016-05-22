@@ -1,23 +1,27 @@
 #! /bin/bash
 DEFAULT_SERVER=localhost
 DEFAULT_PORT=8001
+DEFAULT_SECRET="abcdefgh"
 X="0.0"
 Y="0.0"
 
 print_syntax() {
 cat << EOF
-Usage $0 [-h SERVERNAME] [-p PORT] [-x X] [-y Y] instance_id
-SERVER and PORT can also be provided as environment variables
+Usage $0 [-h SERVERNAME] [-p PORT] [-s SECRET] [-x X] [-y Y] instance_id
+SERVER, PORT and SECRET can also be provided as environment variables
 EOF
 }
 
-while getopts h:p:x:y: opt; do
+while getopts h:p:s:x:y: opt; do
         case $opt in
                 h)
                         SERVER=$OPTARG
                         ;;
                 p)
                         PORT=$OPTARG
+                        ;;
+                s)
+                        SECRET=$OPTARG
                         ;;
                 x)
                         X=$OPTARG
@@ -45,7 +49,7 @@ BASE_URL=http://${SERVER-$DEFAULT_SERVER}:${PORT-$DEFAULT_PORT}
 
 ID=$1
 
-curl -d @- -X POST -H "Content-Type: application/json" $BASE_URL/instances/$ID/spawn << EOF
+curl -d @- -X POST -H "Access-Token: ${SECRET-$DEFAULT_SECRET}" -H "Content-Type: application/json" $BASE_URL/instances/$ID/spawn << EOF
 {
         "monster_class": 42,
         "x": $X,

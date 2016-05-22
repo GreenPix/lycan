@@ -16,7 +16,6 @@ extern crate nalgebra;
 extern crate smallvec;
 extern crate rand;
 extern crate aariba;
-extern crate hyper;
 extern crate bytes;
 extern crate behaviour_tree;
 extern crate serde;
@@ -24,6 +23,7 @@ extern crate serde_json;
 
 // Iron and related crates
 #[macro_use] extern crate iron;
+#[macro_use] extern crate hyper;
 extern crate router;
 extern crate bodyparser;
 extern crate plugin;

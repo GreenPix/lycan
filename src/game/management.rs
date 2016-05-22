@@ -1,5 +1,6 @@
 use std::thread;
 use std::sync::mpsc::{self,Sender};
+use std::error::Error as StdError;
 
 use mio::Sender as MioSender;
 use serde_json::ser::to_vec_pretty;
@@ -7,6 +8,8 @@ use serde::Serialize;
 use iron::prelude::*;
 use iron::status::Status;
 use iron::headers::ContentType;
+use iron::{BeforeMiddleware};
+use iron::error::HttpError;
 use bodyparser::Struct;
 use router::{Router};
 use plugin::Extensible;
@@ -24,8 +27,17 @@ use instance::management::*;
 // TODO
 // - Set correct headers in all responses
 // - Check if correct heahers are set (e.g. Content-Type)
-// - Authentication of each request
-// - Do proper error handling
+
+pub fn start_management_api(sender: MioSender<LycanRequest>) {
+    thread::spawn(move || {
+        let router = create_router(sender);
+        let mut chain = Chain::new(router);
+        chain.link_before(AuthenticationMiddleware("abcdefgh".to_string()));
+        let iron = Iron::new(chain);
+
+        iron.http("127.0.0.1:8001").unwrap();
+    });
+}
 
 macro_rules! itry_map {
     ($result:expr, |$err:ident| $bl:expr) => {
@@ -36,15 +48,6 @@ macro_rules! itry_map {
             }
         }
     };
-}
-
-pub fn start_management_api(sender: MioSender<LycanRequest>) {
-    thread::spawn(move || {
-        let router = create_router(sender);
-        let iron = Iron::new(router);
-
-        iron.http("127.0.0.1:8001").unwrap();
-    });
 }
 
 /// Macro to reduce the boilerplate of creating a channel, create a request, send it to Game and
@@ -226,6 +229,51 @@ impl <T: Serialize> Modifier<Response> for JsonWriter<T> {
                 let modifier = (Status::InternalServerError, err);
                 modifier.modify(response);
             }
+        }
+    }
+}
+
+struct AuthenticationMiddleware(String);
+
+impl BeforeMiddleware for AuthenticationMiddleware {
+    fn before(&self, req: &mut Request) -> IronResult<()> {
+        match req.headers.get::<AccessToken>() {
+            None => Err(IronError::new(AuthenticationError::NoToken, Status::Unauthorized)),
+            Some(token) => {
+                if &token.0 == &self.0 {
+                    Ok(())
+                } else {
+                    Err(IronError::new(AuthenticationError::InvalidToken(token.0.clone()), Status::Unauthorized))
+                }
+            }
+        }
+    }
+}
+
+header! { (AccessToken, "Access-Token") => [String] }
+
+#[derive(Debug,Clone)]
+enum AuthenticationError {
+    NoToken,
+    InvalidToken(String),
+}
+
+impl StdError for AuthenticationError {
+    fn description(&self) -> &str {
+        use self::AuthenticationError::*;
+        match *self {
+            NoToken => "No authentication token",
+            InvalidToken(_) => "Invalid authentication token",
+        }
+    }
+}
+
+impl ::std::fmt::Display for AuthenticationError {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(),::std::fmt::Error> {
+        use self::AuthenticationError::*;
+        match *self {
+            NoToken => write!(f, "No authentication token"),
+            InvalidToken(ref t) => write!(f, "Invalid authentication token {}", t),
         }
     }
 }
