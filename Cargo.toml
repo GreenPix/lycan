@@ -28,6 +28,7 @@ serde_json = "0.7"
 
 # Iron and related crates
 iron = "0.3"
+mount = "0.1.0"
 router = "*"
 bodyparser = "*"
 plugin = "*"

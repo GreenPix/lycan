@@ -14,6 +14,7 @@ use bodyparser::Struct;
 use router::{Router};
 use plugin::Extensible;
 use modifier::Modifier;
+use mount::Mount;
 
 use lycan_serialize::AuthenticationToken;
 
@@ -31,7 +32,9 @@ use instance::management::*;
 pub fn start_management_api(sender: MioSender<LycanRequest>) {
     thread::spawn(move || {
         let router = create_router(sender);
-        let mut chain = Chain::new(router);
+        let mut mount = Mount::new();
+        mount.mount("/api/v1", router);
+        let mut chain = Chain::new(mount);
         chain.link_before(AuthenticationMiddleware("abcdefgh".to_string()));
         let mut error_router = ::iron_error_router::ErrorRouter::new();
         error_router.handle_status(Status::NotFound, |_: &mut Request| {

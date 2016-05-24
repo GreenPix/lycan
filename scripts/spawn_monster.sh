@@ -45,7 +45,7 @@ if (( $# != 1 )); then
         print_syntax
         exit 1
 fi
-BASE_URL=http://${SERVER-$DEFAULT_SERVER}:${PORT-$DEFAULT_PORT}
+BASE_URL=http://${SERVER-$DEFAULT_SERVER}:${PORT-$DEFAULT_PORT}/api/v1
 
 ID=$1
 
