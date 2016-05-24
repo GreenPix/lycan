@@ -144,7 +144,14 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
     }));
 
     let clone = sender.clone();
+    server.get("/players", correct_bounds(move |_request| {
+        let entities: Vec<_> = define_request!(clone, |game| {
+            game.players.values().cloned().collect()
+        });
+        Ok(Response::with((Status::Ok, JsonWriter(entities))))
+    }));
 
+    let clone = sender.clone();
     server.post("/instances/:id/spawn", correct_bounds(move |request| {
         use data::SpawnMonster;
         let (id_parsed, parsed_monster);
