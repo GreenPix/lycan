@@ -13,8 +13,8 @@ use utils;
 use instance::Instance;
 use actor::{NetworkActor,ActorId};
 use id::Id;
-use data::{Player,Map};
-use entity::{Entity,EntityType};
+use data::{Player,Map,EntityManagement,EntityType};
+use entity::{Entity};
 use messages::{Command,Request,NetworkNotification};
 use network::Message;
 use scripts::{AaribaScripts,BehaviourTrees};
@@ -48,7 +48,7 @@ pub struct Game {
     map_instances: HashMap<Id<Map>, HashMap<Id<Instance>, Sender<Command>>>,
     // Keep track of all instances still alive
     instances: HashMap<Id<Instance>, Sender<Command>>,
-    player_positions: HashMap<Id<Player>, Id<Instance>>,
+    players: HashMap<Id<Player>, EntityManagement>,
     server: TcpListener,
     resource_manager: ResourceManager,
     arriving_clients: ArrivingClientManager,
@@ -71,7 +71,7 @@ impl Game {
         Game {
             map_instances: HashMap::new(),
             instances: HashMap::new(),
-            player_positions: HashMap::new(),
+            players: HashMap::new(),
             server: server,
             resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS, sender, base_url),
             arriving_clients: ArrivingClientManager::new(),
@@ -154,6 +154,16 @@ impl Game {
                     cb.call_box((event_loop, self));
                 }
             }
+            Request::PlayerUpdate(players) => {
+                for player in players {
+                    let id = if let EntityType::Player(ref p) = player.entity_type {
+                        p.id
+                    } else {
+                        continue;
+                    };
+                    self.players.insert(id, player);
+                }
+            }
         }
     }
 
@@ -210,14 +220,6 @@ impl Game {
         }
     }
 
-    fn track_player(&mut self, entities: &[Entity], instance: Id<Instance>) {
-        for entity in entities {
-            if let EntityType::Player(ref player) = *entity.get_type() {
-                self.player_positions.insert(player.get_id(), instance);
-            }
-        }
-    }
-
     fn player_ready(&mut self, event_loop: &mut EventLoop<Self>,  mut actor: NetworkActor, id: Id<Player>) {
         match self.resource_manager.retrieve_player(id) {
             Ok(entity) => {
@@ -242,7 +244,7 @@ impl Game {
     fn entity_leaving(&mut self, entity: Entity) {
         let player: Option<Player> = entity.into();
         if let Some(player) = player {
-            self.player_positions.remove(&player.id);
+            self.players.remove(&player.id);
 
             let path = format!("./scripts/entities/{}", player.id);
             utils::serialize_to_file(path, &player);

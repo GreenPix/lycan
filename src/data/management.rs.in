@@ -1,7 +1,7 @@
 
 use data::player::{Stats};
 use id::{Id,HasForgeableId};
-use data::Map;
+use data::{Map,Player};
 
 // Representation of an entity in the management API
 #[derive(Serialize,Debug,Clone)]
@@ -23,7 +23,7 @@ pub enum EntityType {
 
 #[derive(Serialize,Debug,Clone)]
 pub struct PlayerStruct {
-    pub id: u64,
+    pub id: Id<Player>,
     pub name: String,
     pub gold: u64,
     pub experience: u64,

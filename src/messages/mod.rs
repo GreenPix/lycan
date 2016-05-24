@@ -21,6 +21,7 @@ use game::Game;
 use actor::{NetworkActor,ActorId};
 use id::Id;
 use instance::{Instance,ShuttingDownState};
+use data::EntityManagement;
 
 mod conversions;
 
@@ -68,6 +69,7 @@ pub enum Request {
         entities: Vec<Entity>,
     },
     InstanceShuttingDown(ShuttingDownState),
+    PlayerUpdate(Vec<EntityManagement>),
 
     // Callback from ResourceManager
     JobFinished(usize),

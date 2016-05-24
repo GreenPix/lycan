@@ -274,7 +274,7 @@ impl Entity {
         let entity_type = match self.e_type {
             EntityType::Player(ref player) => {
                 let player_struct = PlayerStruct {
-                    id: player.id.as_u64(),
+                    id: player.id,
                     name: player.name.clone(),
                     gold: player.gold,
                     guild: player.guild.clone(),

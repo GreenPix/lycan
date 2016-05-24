@@ -24,8 +24,10 @@ lazy_static! {
         DEFAULT_REFRESH_PERIOD.num_microseconds().unwrap() as f32 / 1000000.0
     };
     static ref DEFAULT_REFRESH_PERIOD: Duration = Duration::microseconds(16666);
+    static ref GAME_PLAYER_REFRESH_PERIOD: Duration = Duration::seconds(2);
     //static ref DEFAULT_REFRESH_PERIOD: Duration = Duration::milliseconds(1000);
 }
+
 
 #[derive(Debug,Default)]
 struct Actors {
@@ -186,6 +188,9 @@ impl Instance {
             debug!("Started instance {}", instance.id);
             event_loop.timeout_ms(InstanceTick::CalculateTick,
                                   instance.refresh_period.num_milliseconds() as u64)
+                      .unwrap();
+            event_loop.timeout_ms(InstanceTick::UpdatePlayers,
+                                  GAME_PLAYER_REFRESH_PERIOD.num_milliseconds() as u64)
                       .unwrap();
             instance.last_tick = SteadyTime::now();
             event_loop.run(&mut instance).unwrap();
@@ -444,6 +449,16 @@ impl Handler for Instance {
                 let sleep = (self.refresh_period - self.lag).num_milliseconds() as u64;
                 event_loop.timeout_ms(InstanceTick::CalculateTick, sleep).unwrap();
             }
+            InstanceTick::UpdatePlayers => {
+                let vec = self.entities
+                    .iter()
+                    .filter(|e| e.is_player())
+                    .map(|e| e.into_management_representation(self.id, self.map_id))
+                    .collect();
+                self.request.send(Request::PlayerUpdate(vec)).unwrap();
+                let sleep = GAME_PLAYER_REFRESH_PERIOD.num_milliseconds() as u64;
+                event_loop.timeout_ms(InstanceTick::UpdatePlayers, sleep).unwrap();
+            }
         }
     }
 
@@ -467,6 +482,8 @@ pub enum InstanceTick {
     /// This will among other things execute all actions made by players
     /// since the last tick, resolve AI trees and send the update to players
     CalculateTick,
+    /// This will update the Game's knowledge of all Player in this map
+    UpdatePlayers,
 }
 
 #[derive(Debug)]
