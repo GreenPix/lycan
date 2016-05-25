@@ -17,7 +17,9 @@ pub struct EntityManagement {
 
 #[derive(Serialize,Debug,Clone)]
 pub enum EntityType {
+    #[serde(rename="player")]
     Player(PlayerStruct),
+    #[serde(rename="monster")]
     Monster(MonsterStruct),
 }
 
