@@ -8,7 +8,7 @@ use std::time::Duration as StdDuration;
 use mio::*;
 use time::{Duration,SteadyTime};
 
-use id::Id;
+use id::{Id,HasId};
 use entity::{self,Entity,EntityStore};
 use actor::{NetworkActor,ActorId,AiActor};
 use messages::{self,Command,Notification,Request};
@@ -525,4 +525,8 @@ impl Drop for Instance {
             self.shutdown(None);
         }
     }
+}
+
+impl HasId for Instance {
+    type Type = u64;
 }

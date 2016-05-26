@@ -10,7 +10,7 @@ use lycan_serialize::{AuthenticationToken,ErrorCode};
 use smallvec::SmallVec;
 
 use actor::{NetworkActor};
-use id::{Id,ConvertTo};
+use id::{Id,ConvertTo,HasId};
 use data::{Map,Player};
 use instance::Instance;
 use network::*;
@@ -237,4 +237,8 @@ impl Into<NetworkActor> for ArrivingClient {
     fn into(self) -> NetworkActor {
         NetworkActor::new(self.id.convert(), self.client)
     }
+}
+
+impl HasId for ArrivingClient {
+    type Type = u64;
 }

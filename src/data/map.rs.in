@@ -1,8 +1,12 @@
-use id::{Id, HasForgeableId};
+use id::{Id, HasForgeableId, HasId};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Map {
     id: Id<Map>,
+}
+
+impl HasId for Map {
+    type Type = u64;
 }
 
 impl HasForgeableId for Map {}

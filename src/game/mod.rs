@@ -12,7 +12,7 @@ use lycan_serialize::AuthenticationToken;
 use utils;
 use instance::Instance;
 use actor::{NetworkActor,ActorId};
-use id::Id;
+use id::{Id,HasId};
 use data::{Player,Map,EntityManagement,EntityType};
 use entity::{Entity};
 use messages::{Command,Request,NetworkNotification};
@@ -323,4 +323,8 @@ impl Callbacks {
     fn get_callbacks(&mut self, job: usize) -> Vec<Callback> {
         self.callbacks.remove(&job).unwrap_or(Vec::new())
     }
+}
+
+impl HasId for Game {
+    type Type = u64;
 }

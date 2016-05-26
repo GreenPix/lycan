@@ -211,7 +211,8 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
         };
         let entity_id: WeakId<Entity> = {
             let id = &params["entity_id"];
-            try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid entity id {}: {}", id, e))).into()
+            let id_u64 = try!(id.parse::<u64>().map_err(|e| format!("ERROR: invalid entity id {}: {}", id, e)));
+            WeakId::new(id_u64)
         };
         let result = try!(define_request_instance!(sender, instance_id, |instance| {
             instance.remove_entity(entity_id)

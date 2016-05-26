@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use nalgebra::{Pnt2,Vec2};
 use rand;
 
-use id::{Id,HasForgeableId};
+use id::{Id,HasForgeableId,HasId};
 use data::{
     Map,Player,Stats,Position,
     EntityManagement, PositionInstance,
@@ -386,4 +386,8 @@ impl Into<Option<Player>> for Entity {
 
         Some(player)
     }
+}
+
+impl HasId for Entity {
+    type Type = u64;
 }

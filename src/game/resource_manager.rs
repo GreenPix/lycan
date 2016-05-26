@@ -9,7 +9,7 @@ use mio::Sender as MioSender;
 use serde_json;
 
 use utils;
-use id::Id;
+use id::{Id,HasId};
 use data::{Map,Player};
 use entity::Entity;
 use game::Game;
@@ -24,7 +24,7 @@ pub struct ResourceManager {
     base_url: String,
 }
 
-struct ResourceManagerInner<T,U> {
+struct ResourceManagerInner<T: HasId,U> {
     resources: HashMap<Id<T>, U>,
     errors: HashMap<Id<T>, Error>,
     jobs: CurrentJobs<T>,
@@ -38,7 +38,7 @@ struct ResourceManagerInner<T,U> {
 impl <T,U> ResourceManagerInner<T,U>
 where U: RetreiveFromId<T>,
       U: Send + 'static,
-      T: 'static {
+      T: HasId + 'static {
     fn new(requests: MioSender<Request>) -> ResourceManagerInner<T,U> {
         let (tx, rx) = mpsc::channel();
         ResourceManagerInner {
@@ -76,7 +76,7 @@ where U: RetreiveFromId<T>,
                 Ok(data) => {
                     self.jobs.remove(id);
                     if let Some(_old) = self.resources.insert(id,data) {
-                        warn!("Replacing resource {} in the resource manager", id);
+                        warn!("Replacing resource {:?} in the resource manager", id);
                     }
                 }
                 Err(e) => {
@@ -111,7 +111,7 @@ where U: RetreiveFromId<T>,
 impl <T,U> ResourceManagerInner<T,U>
 where U: RetreiveFromId<T>,
       U: Send + Clone + 'static,
-      T: 'static {
+      T: HasId + 'static {
     fn get(&mut self, id: Id<T>, pool: &ThreadPool, job: usize, info: U::Info) -> Result<U, Error> {
         self.process_inputs();
         // We already have it
@@ -187,11 +187,11 @@ enum Data {
 }
 
 #[derive(Debug)]
-struct CurrentJobs<T> {
+struct CurrentJobs<T: HasId> {
     inner: HashMap<Id<T>,usize>,
 }
 
-impl <T> CurrentJobs<T> {
+impl<T: HasId> CurrentJobs<T> {
     fn new() -> CurrentJobs<T> {
         CurrentJobs {
             inner: HashMap::new(),
@@ -229,7 +229,7 @@ impl fmt::Debug for ResourceManager {
     }
 }
 
-impl <T: fmt::Debug, U: fmt::Debug> fmt::Debug for ResourceManagerInner<T,U> {
+impl <T: fmt::Debug + HasId, U: fmt::Debug> fmt::Debug for ResourceManagerInner<T,U> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("ResourceManagerInner")
             .field("resources", &self.resources)
@@ -240,7 +240,8 @@ impl <T: fmt::Debug, U: fmt::Debug> fmt::Debug for ResourceManagerInner<T,U> {
 }
 
 // Fetch the resource from the disk
-pub trait RetreiveFromId<T=Self> {
+pub trait RetreiveFromId<T=Self>
+where T: HasId {
     type Info: Send;
     fn retrieve(id: Id<T>, info: Self::Info) -> Result<Self,Error> where Self: Sized;
 }
@@ -271,7 +272,7 @@ impl RetreiveFromId for Map {
     }
 }
 
-impl <T,U> RetreiveFromId<U> for Arc<T>
+impl <T,U: HasId> RetreiveFromId<U> for Arc<T>
 where T: RetreiveFromId<U> {
     type Info = T::Info;
     fn retrieve(id: Id<U>, info: Self::Info) -> Result<Arc<T>,Error> {
