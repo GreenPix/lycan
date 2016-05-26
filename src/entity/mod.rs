@@ -12,6 +12,7 @@ use data::{
     PlayerStruct, MonsterStruct,
     EntityType as DataEntityType,
 };
+use data::UNIQUE_MAP;
 use messages::{EntityState};
 use instance::Instance;
 
@@ -174,7 +175,7 @@ impl Entity {
         let position = Position {
             x: 0.0,
             y: 0.0,
-            map: Id::forge(1)
+            map: UNIQUE_MAP.get_id()
         };
         let name = format!("Player {}", id);
         let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;

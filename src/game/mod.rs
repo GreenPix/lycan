@@ -12,8 +12,9 @@ use lycan_serialize::AuthenticationToken;
 use utils;
 use instance::Instance;
 use actor::{NetworkActor,ActorId};
-use id::{Id,HasId};
+use id::{Id,HasId,WeakId};
 use data::{Player,Map,EntityManagement,EntityType};
+use data::UNIQUE_MAP;
 use entity::{Entity};
 use messages::{Command,Request,NetworkNotification};
 use network::Message;
@@ -31,11 +32,6 @@ const RESOURCE_MANAGER_THREADS: usize = 2;
 
 const SERVER: Token = Token(0);
 const UDP_SOCKET: Token = Token(1);
-
-// XXX: Hack to remove ... currently we consider only one map
-lazy_static!{
-    static ref UNIQUE_MAP: Map = Map::new(Id::forge(1));
-}
 
 #[derive(Debug,Clone)]
 pub struct GameParameters {
@@ -257,7 +253,7 @@ impl Game {
         self.resource_manager.load_player(id);
     }
 
-    fn get_instances(&mut self, map: Id<Map>) -> Option<Vec<Id<Instance>>> {
+    fn get_instances(&mut self, map: WeakId<Map>) -> Option<Vec<Id<Instance>>> {
         self.map_instances.get(&map)
             .map(|instances| { instances.keys().cloned().collect() })
     }

@@ -5,6 +5,7 @@ use std::error::Error as StdError;
 use mio::Sender as MioSender;
 use serde_json::ser::to_vec_pretty;
 use serde::Serialize;
+use uuid::Uuid;
 use iron::prelude::*;
 use iron::status::Status;
 use iron::headers::ContentType;
@@ -126,9 +127,9 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
         let params = request.extensions.get::<Router>().unwrap();
         // id is part of the route, the unwrap should never fail
         let id = &params["id"];
-        let parsed = itry_map!(id.parse::<u64>(), |e| (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
+        let parsed = itry_map!(id.parse::<Uuid>(), |e| (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
         let instances = define_request!(clone, |game| {
-            game.get_instances(Id::forge(parsed))
+            game.get_instances(WeakId::new(parsed))
         });
         Ok(Response::with((Status::Ok,JsonWriter(instances))))
     }));
