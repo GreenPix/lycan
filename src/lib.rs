@@ -20,6 +20,7 @@ extern crate bytes;
 extern crate behaviour_tree;
 extern crate serde;
 extern crate serde_json;
+extern crate uuid;
 
 // Iron and related crates
 #[macro_use] extern crate iron;

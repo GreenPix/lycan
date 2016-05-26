@@ -201,6 +201,12 @@ impl<T: HasForgeableId> Id<T> {
     }
 }
 
+impl<T: HasForgeableId> WeakId<T> {
+    pub fn upgrade(self) -> Id<T> {
+        Id::new_inner(self)
+    }
+}
+
 // TODO: Change type if 'id' to WeakId<T>
 pub fn get_id_if_exists<T: HasId>(set: &HashSet<Id<T>>, id: T::Type) -> Option<Id<T>> {
     let weak = WeakId::new(id);

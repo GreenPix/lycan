@@ -194,9 +194,8 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
         let decoded = iexpect!(maybe_params, (Status::BadRequest, "ERROR: No JSON body provided"));
         debug!("Received request to /connect_character: {:?}", decoded);
         define_request!(clone, |game| {
-            let id = Id::forge(decoded.id);
             let token = AuthenticationToken(decoded.token);
-            game.connect_character(id, token);
+            game.connect_character(decoded.id, token);
         });
         Ok(Response::with((Status::Ok, "OK")))
     }));

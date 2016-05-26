@@ -10,7 +10,7 @@ use lycan_serialize::{AuthenticationToken,ErrorCode};
 use smallvec::SmallVec;
 
 use actor::{NetworkActor};
-use id::{Id,ConvertTo,HasId};
+use id::{Id,ConvertTo,HasId,WeakId};
 use data::{Map,Player};
 use instance::Instance;
 use network::*;
@@ -96,7 +96,7 @@ impl ArrivingClientManager {
                                     Entry::Occupied(e) => e,
                                     _ => unreachable!(),
                                 };
-                                let id = Id::forge(player_id);
+                                let id = player_id.upgrade();
                                 if entry.get_mut().set_player_id(id) {
                                     // The client is ready, we can return him
                                     trace!("Sending response to client {}", id_u64);
@@ -165,7 +165,9 @@ impl ArrivingClient {
                         NetworkCommand::GameCommand(
                             NetworkGameCommand::Authenticate(id_player, authentication_token)) => {
                             trace!("Pushing authentication token");
-                            res.push(ArrivingClientAction::VerifyToken(id_player, authentication_token));
+                            res.push(ArrivingClientAction::VerifyToken(
+                                        WeakId::new(id_player),
+                                        authentication_token));
                         }
                         _ => {
                             warn!("Client {} tried to send a command before authenticating",
@@ -223,7 +225,7 @@ impl ArrivingClient {
 #[derive(Debug)]
 enum ArrivingClientAction {
     Remove,
-    VerifyToken(u64, AuthenticationToken),
+    VerifyToken(WeakId<Player>, AuthenticationToken),
 }
 
 #[derive(Debug)]

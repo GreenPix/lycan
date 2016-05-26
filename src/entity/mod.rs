@@ -176,20 +176,7 @@ impl Entity {
             y: 0.0,
             map: Id::forge(1)
         };
-        let name =  match id.as_u64() {
-            0 => {
-                "Vaelden".to_owned()
-            }
-            1 => {
-                "Cendrais".to_owned()
-            }
-            2 => {
-                "Nemikolh".to_owned()
-            }
-            _ => {
-                format!("Player{}", id)
-            }
-        };
+        let name = format!("Player {}", id);
         let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
         let player = Player {
             id:         id,

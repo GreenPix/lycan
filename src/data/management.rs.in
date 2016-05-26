@@ -60,7 +60,7 @@ pub struct SpawnMonster {
 #[derive(Deserialize,Debug,Clone)]
 pub struct ConnectCharacterParam {
     pub token: String,
-    pub id: u64,
+    pub id: Id<Player>,
 }
 
 #[derive(Deserialize,Debug,Clone)]
