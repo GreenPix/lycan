@@ -2,17 +2,18 @@
 DEFAULT_SERVER=localhost
 DEFAULT_PORT=8001
 DEFAULT_SECRET="abcdefgh"
+DEFAULT_MONSTER_CLASS="67e6001e-d735-461d-b32e-2e545e12b3d2"
 X="0.0"
 Y="0.0"
 
 print_syntax() {
 cat << EOF
-Usage $0 [-h SERVERNAME] [-p PORT] [-s SECRET] [-x X] [-y Y] instance_id
+Usage $0 [-h SERVERNAME] [-p PORT] [-s SECRET] [-x X] [-y Y] [-c MONSTER_CLASS] instance_id
 SERVER, PORT and SECRET can also be provided as environment variables
 EOF
 }
 
-while getopts h:p:s:x:y: opt; do
+while getopts h:p:s:x:y:c: opt; do
         case $opt in
                 h)
                         SERVER=$OPTARG
@@ -22,6 +23,9 @@ while getopts h:p:s:x:y: opt; do
                         ;;
                 s)
                         SECRET=$OPTARG
+                        ;;
+                c)
+                        MONSTER_CLASS=$OPTARG
                         ;;
                 x)
                         X=$OPTARG
@@ -51,7 +55,7 @@ ID=$1
 
 curl -d @- -X POST -H "Access-Token: ${SECRET-$DEFAULT_SECRET}" -H "Content-Type: application/json" $BASE_URL/instances/$ID/spawn << EOF
 {
-        "monster_class": 42,
+        "monster_class": ${MONSTER_CLASS-$DEFAULT_MONSTER_CLASS},
         "x": $X,
         "y": $Y
 }

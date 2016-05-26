@@ -44,7 +44,7 @@ TOKEN=$2
 
 curl -d @- -X POST -H "Access-Token: ${SECRET-$DEFAULT_SECRET}" -H "Content-Type: application/json" $BASE_URL/connect_character << EOF
 {
-        "id": $ID,
+        "id": "$ID",
         "token": "$TOKEN"
 }
 EOF
