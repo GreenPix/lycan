@@ -1,11 +1,13 @@
 use data::player::{Stats};
 use id::{Id,HasForgeableId};
 use data::{Map,Player,Monster};
+use entity::Entity;
+use instance::Instance;
 
 // Representation of an entity in the management API
 #[derive(Serialize,Debug,Clone)]
 pub struct EntityManagement {
-    pub id: u64,
+    pub id: Id<Entity>,
     #[serde(rename="type")]
     pub entity_type: EntityType,
     pub skin: u64,
@@ -44,7 +46,7 @@ pub struct PositionInstance {
     pub map: Id<Map>,
     pub x: f32,
     pub y: f32,
-    pub instance: u64,
+    pub instance: Id<Instance>,
 }
 
 #[derive(Deserialize,Debug,Clone,Copy)]

@@ -256,7 +256,7 @@ impl Entity {
             x: self.position.x,
             y: self.position.y,
             map: map,
-            instance: instance_id.as_u64(),
+            instance: instance_id,
         };
         let entity_type = match self.e_type {
             EntityType::Player(ref player) => {
@@ -279,7 +279,7 @@ impl Entity {
             }
         };
         EntityManagement {
-            id: self.id.as_u64(),
+            id: self.id,
             entity_type: entity_type,
             skin: self.skin,
             current_pv: self.pv,
