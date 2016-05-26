@@ -1,7 +1,6 @@
-
 use data::player::{Stats};
 use id::{Id,HasForgeableId};
-use data::{Map,Player};
+use data::{Map,Player,Monster};
 
 // Representation of an entity in the management API
 #[derive(Serialize,Debug,Clone)]
@@ -34,7 +33,7 @@ pub struct PlayerStruct {
 
 #[derive(Serialize,Debug,Clone)]
 pub struct MonsterStruct {
-    pub id: u64,
+    pub monster_class: Id<Monster>,
     pub name: String,
     pub behaviour_tree: String,
 }
@@ -50,7 +49,7 @@ pub struct PositionInstance {
 
 #[derive(Deserialize,Debug,Clone,Copy)]
 pub struct SpawnMonster {
-    pub monster_class: u64,
+    pub monster_class: Id<Monster>,
     #[serde(default)]
     pub x: f32,
     #[serde(default)]

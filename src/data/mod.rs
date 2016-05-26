@@ -1,6 +1,7 @@
 mod map;
 mod player;
 mod management;
+mod monster;
 
 pub use self::map::Map;
 pub use self::management::EntityManagement;
@@ -14,3 +15,4 @@ pub use self::management::AuthenticatedRequest;
 pub use self::player::Player;
 pub use self::player::Stats;
 pub use self::player::Position;
+pub use self::monster::Monster;

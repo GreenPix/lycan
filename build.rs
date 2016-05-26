@@ -9,6 +9,7 @@ const FILES: &'static [&'static str] = &[
     "src/data/management.rs.in",
     "src/data/player.rs.in",
     "src/data/map.rs.in",
+    "src/data/monster.rs.in",
 ];
 pub fn main() {
     let out_dir = env::var_os("OUT_DIR").unwrap();

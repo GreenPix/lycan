@@ -271,7 +271,7 @@ impl Entity {
             }
             EntityType::Invoked(_) => {
                 let monster_struct = MonsterStruct {
-                    id: 0,
+                    monster_class: Id::forge(Default::default()),
                     name: "TODO".to_string(),
                     behaviour_tree: "TODO".to_string(),
                 };
