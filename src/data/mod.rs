@@ -15,7 +15,7 @@ pub use self::management::PlayerStruct;
 pub use self::management::MonsterStruct;
 pub use self::management::SpawnMonster;
 pub use self::management::ConnectCharacterParam;
-pub use self::management::AuthenticatedRequest;
+pub use self::management::GetInstances;
 pub use self::player::Player;
 pub use self::player::Stats;
 pub use self::player::Position;

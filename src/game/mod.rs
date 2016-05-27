@@ -10,7 +10,7 @@ use mio::tcp::TcpListener;
 use lycan_serialize::AuthenticationToken;
 
 use utils;
-use instance::Instance;
+use instance::{InstanceRef,Instance};
 use actor::{NetworkActor,ActorId};
 use id::{Id,HasId,WeakId};
 use data::{Player,Map,EntityManagement,EntityType};
@@ -41,9 +41,9 @@ pub struct GameParameters {
 
 pub struct Game {
     // Keep track of all _active_ (not shuting down) instances, indexed by map ID
-    map_instances: HashMap<Id<Map>, HashMap<Id<Instance>, Sender<Command>>>,
+    map_instances: HashMap<Id<Map>, HashMap<Id<Instance>, InstanceRef>>,
     // Keep track of all instances still alive
-    instances: HashMap<Id<Instance>, Sender<Command>>,
+    instances: HashMap<Id<Instance>, InstanceRef>,
     players: HashMap<Id<Player>, EntityManagement>,
     server: TcpListener,
     resource_manager: ResourceManager,
@@ -193,19 +193,20 @@ impl Game {
                     }
                     None => {
                         // No instance for this map, spawn one
-                        let (id, instance) = Instance::spawn_instance(
+                        let instance = Instance::spawn_instance(
                             event_loop.channel(),
                             self.scripts.clone(),
                             self.trees.clone(),
                             map,
                             );
                         instance.send(Command::NewClient(actor,entities)).unwrap();
-                        Some((id, instance))
+                        Some(instance)
                     }
                 };
 
                 // Because of the borrow checker
-                if let Some((id, instance)) = register_new_instance {
+                if let Some(instance) = register_new_instance {
+                    let id = instance.get_id();
                     instances.insert(id, instance.clone());
                     self.instances.insert(id, instance);
                 }
@@ -251,11 +252,6 @@ impl Game {
         debug!("Connecting character {} with token {}", id, token.0);
         self.arriving_clients.new_auth_tok(token, id);
         self.resource_manager.load_player(id);
-    }
-
-    fn get_instances(&mut self, map: WeakId<Map>) -> Option<Vec<Id<Instance>>> {
-        self.map_instances.get(&map)
-            .map(|instances| { instances.keys().cloned().collect() })
     }
 }
 

@@ -6,7 +6,7 @@ use std::mem;
 use std::time::Duration as StdDuration;
 
 use mio::*;
-use time::{Duration,SteadyTime};
+use time::{self,Duration,SteadyTime,Tm};
 
 use id::{Id,HasId};
 use entity::{self,Entity,EntityStore};
@@ -167,6 +167,7 @@ pub struct Instance {
     scripts: AaribaScripts,
     trees: BehaviourTrees,
     shutting_down: bool,
+    created_at: Tm,
 
     // XXX: Do we need to change the refresh period?
     refresh_period: Duration,
@@ -177,12 +178,13 @@ impl Instance {
                           scripts: AaribaScripts,
                           trees: BehaviourTrees,
                           map_id: Id<Map>,
-                          ) -> (Id<Self>, Sender<Command>) {
+                          ) -> InstanceRef {
         let mut instance = Instance::new(request, scripts, trees, map_id);
         let mut config = EventLoopConfig::default();
         config.timer_tick_ms((instance.refresh_period.num_milliseconds() / 2) as u64);
         let mut event_loop = EventLoop::configured(config).unwrap();
         let id = instance.get_id();
+        let created_at = instance.created_at;
         let sender = event_loop.channel();
         thread::spawn(move || {
             debug!("Started instance {}", instance.id);
@@ -196,7 +198,7 @@ impl Instance {
             event_loop.run(&mut instance).unwrap();
             debug!("Stopping instance {}", instance.id);
         });
-        (id, sender)
+        InstanceRef::new(id, sender, created_at, map_id)
     }
 
     fn new(request: Sender<Request>,
@@ -218,6 +220,7 @@ impl Instance {
             scripts: scripts,
             trees: trees,
             shutting_down: false,
+            created_at: time::now_utc(),
         };
 
         // XXX Fake an AI on the map
@@ -464,6 +467,48 @@ impl Handler for Instance {
 
     fn interrupted(&mut self, _event_loop: &mut EventLoop<Self>) {
         error!("Interrupted");
+    }
+}
+
+#[derive(Clone)]
+pub struct InstanceRef {
+    id: Id<Instance>,
+    sender: Sender<Command>,
+    created_at: Tm,
+    map: Id<Map>,
+}
+
+impl InstanceRef {
+    pub fn new(id: Id<Instance>,
+               sender: Sender<Command>,
+               created_at: Tm,
+               map: Id<Map>) -> InstanceRef {
+        InstanceRef {
+            id: id,
+            sender: sender,
+            created_at: created_at,
+            map: map,
+        }
+    }
+
+    pub fn send(&self, command: Command) -> Result<(),NotifyError<Command>> {
+        self.sender.send(command)
+    }
+
+    pub fn get_id(&self) -> Id<Instance> {
+        self.id
+    }
+
+    pub fn get_map(&self) -> Id<Map> {
+        self.map
+    }
+
+    pub fn created_at(&self) -> &Tm {
+        &self.created_at
+    }
+
+    pub fn get_sender(&self) -> &Sender<Command> {
+        &self.sender
     }
 }
 

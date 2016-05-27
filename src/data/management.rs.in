@@ -1,3 +1,5 @@
+use time::Tm;
+
 use data::player::{Stats};
 use id::{Id,HasForgeableId};
 use data::{Map,Player,Monster};
@@ -64,8 +66,9 @@ pub struct ConnectCharacterParam {
     pub id: Id<Player>,
 }
 
-#[derive(Deserialize,Debug,Clone)]
-pub struct AuthenticatedRequest<T> {
-    pub secret: String,
-    pub params: T,
+#[derive(Serialize,Debug,Clone)]
+pub struct GetInstances {
+    pub id: Id<Instance>,
+    pub map: Id<Map>,
+    pub created_at: String,
 }

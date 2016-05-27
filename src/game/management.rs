@@ -22,9 +22,10 @@ use lycan_serialize::AuthenticationToken;
 use id::{Id,WeakId};
 use messages::Request as LycanRequest;
 use messages::Command;
-use data::{ConnectCharacterParam,AuthenticatedRequest,Map};
+use data::{ConnectCharacterParam,Map,GetInstances};
 use entity::Entity;
 use instance::management::*;
+use game::Game;
 
 // TODO
 // - Set correct headers in all responses
@@ -129,7 +130,7 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
         let id = &params["id"];
         let parsed = itry_map!(id.parse::<Uuid>(), |e| (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
         let instances = define_request!(clone, |game| {
-            game.get_instances(WeakId::new(parsed))
+            get_instances(game, WeakId::new(parsed))
         });
         Ok(Response::with((Status::Ok,JsonWriter(instances))))
     }));
@@ -295,4 +296,17 @@ impl ::std::fmt::Display for AuthenticationError {
             InvalidToken(ref t) => write!(f, "Invalid authentication token {}", t),
         }
     }
+}
+
+
+fn get_instances(game: &Game, map: WeakId<Map>) -> Option<Vec<GetInstances>> {
+    game.map_instances.get(&map).map(|instances| {
+        instances.values().map(|refe| {
+            GetInstances {
+                id: refe.get_id(),
+                map: refe.get_map(),
+                created_at: refe.created_at().rfc822().to_string(),
+            }
+        }).collect()
+    })
 }
