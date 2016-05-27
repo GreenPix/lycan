@@ -11,6 +11,7 @@ use serde_json;
 use utils;
 use id::{Id,HasId};
 use data::{Map,Player};
+use data::UNIQUE_MAP;
 use entity::Entity;
 use game::Game;
 use messages::Request;
@@ -268,7 +269,11 @@ impl RetreiveFromId<Player> for Entity {
 impl RetreiveFromId for Map {
     type Info = ();
     fn retrieve(id: Id<Map>, _: ()) -> Result<Map,Error> {
-        Ok(Map::new(id, format!("Map ID {}", id)))
+        if id != UNIQUE_MAP.get_id() {
+            Err(Error::NotFound)
+        } else {
+            Ok(UNIQUE_MAP.clone())
+        }
     }
 }
 
