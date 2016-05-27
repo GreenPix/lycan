@@ -55,7 +55,7 @@ ID=$1
 
 curl -d @- -X POST -H "Access-Token: ${SECRET-$DEFAULT_SECRET}" -H "Content-Type: application/json" $BASE_URL/instances/$ID/spawn << EOF
 {
-        "monster_class": ${MONSTER_CLASS-$DEFAULT_MONSTER_CLASS},
+        "monster_class": "${MONSTER_CLASS-$DEFAULT_MONSTER_CLASS}",
         "x": $X,
         "y": $Y
 }

@@ -16,7 +16,7 @@ impl Instance {
     }
 
     pub fn spawn_monster(&mut self, monster: SpawnMonster) -> EntityManagement {
-        let id = self.add_fake_ai(monster.x, monster.y);
+        let id = self.add_fake_ai(monster.monster_class, monster.x, monster.y);
         self.entities.get(id).unwrap().into_management_representation(self.id, self.map_id)
     }
 

@@ -14,7 +14,7 @@ use actor::{NetworkActor,ActorId,AiActor};
 use messages::{self,Command,Notification,Request};
 use network::Message;
 use scripts::{BehaviourTrees,AaribaScripts};
-use data::Map;
+use data::{Map,Monster};
 
 pub mod management;
 
@@ -206,6 +206,8 @@ impl Instance {
            trees: BehaviourTrees,
            map_id: Id<Map>,
            ) -> Instance {
+        use uuid::Uuid;
+
         let mut instance = Instance {
             id: Id::new(),
             map_id: map_id,
@@ -224,7 +226,9 @@ impl Instance {
         };
 
         // XXX Fake an AI on the map
-        instance.add_fake_ai(0.0, 0.0);
+        let class_str = "67e6001e-d735-461d-b32e-2e545e12b3d2";
+        let uuid = Uuid::parse_str(class_str).unwrap();
+        instance.add_fake_ai(Id::forge(uuid), 0.0, 0.0);
         instance
     }
 
@@ -412,12 +416,12 @@ impl Instance {
         mem::swap(&mut self.prev_notifications, &mut self.next_notifications);
     }
 
-    fn add_fake_ai(&mut self, x: f32, y: f32) -> Id<Entity> {
+    fn add_fake_ai(&mut self, class: Id<Monster>, x: f32, y: f32) -> Id<Entity> {
         let ai = AiActor::fake(self.trees.generate_tree("zombie").unwrap());
         let id = ai.get_id();
         self.actors.register_internal(ai);
 
-        let entity = Entity::fake_ai(x, y);
+        let entity = Entity::fake_ai(class, x, y);
         let entity_id = entity.get_id();
         self.assign_entity_to_actor(id, entity);
         entity_id

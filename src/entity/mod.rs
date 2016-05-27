@@ -11,6 +11,7 @@ use data::{
     EntityManagement, PositionInstance,
     PlayerStruct, MonsterStruct,
     EntityType as DataEntityType,
+    Monster,
 };
 use data::UNIQUE_MAP;
 use messages::{EntityState};
@@ -127,7 +128,7 @@ impl Entity {
     }
 
     pub fn is_monster(&self) -> bool {
-        if let EntityType::Invoked(_) = self.e_type {
+        if let EntityType::Monster(_) = self.e_type {
             true
         } else {
             false
@@ -138,7 +139,7 @@ impl Entity {
     pub fn recompute_current_stats(&mut self) {
         let speed = match self.e_type {
             EntityType::Player(_) => DEFAULT_SPEED,
-            EntityType::Invoked(_) => DEFAULT_AI_SPEED,
+            EntityType::Monster(_) => DEFAULT_AI_SPEED,
         };
         self.stats.speed = speed;
         self.stats.strength = self.base_stats.strength;
@@ -193,7 +194,7 @@ impl Entity {
         Entity::from(player)
     }
 
-    pub fn fake_ai(x: f32, y: f32) -> Entity {
+    pub fn fake_ai(class: Id<Monster>, x: f32, y: f32) -> Entity {
         let stats = Stats {
             level:          1,
             strength:       2,
@@ -204,8 +205,11 @@ impl Entity {
             wisdom:         7,
         };
         let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
+        let monster = MonsterData {
+            class: class,
+        };
         Entity::new(
-            EntityType::Invoked(None),
+            EntityType::Monster(monster),
             Pnt2::new(x, y),
             Direction::South,
             skin,
@@ -234,15 +238,8 @@ impl Entity {
                               &player.name,
                               player.map));
             }
-            EntityType::Invoked(ref parent) => {
-                match *parent {
-                    Some(parent) => {
-                        try!(writeln!(f, "{}Invoked entity attached to {}", indent, parent));
-                    }
-                    None => {
-                        try!(writeln!(f, "{}Invoked entity", indent));
-                    }
-                }
+            EntityType::Monster(ref monster) => {
+                try!(writeln!(f, "{}Monster class {}", indent, monster.class));
             }
         }
         // TODO: Presence ...
@@ -270,9 +267,9 @@ impl Entity {
                 };
                 DataEntityType::Player(player_struct)
             }
-            EntityType::Invoked(_) => {
+            EntityType::Monster(ref monster) => {
                 let monster_struct = MonsterStruct {
-                    monster_class: Id::forge(Default::default()),
+                    monster_class: monster.class,
                     name: "TODO".to_string(),
                     behaviour_tree: "TODO".to_string(),
                 };
@@ -294,9 +291,8 @@ impl Entity {
 pub enum EntityType {
     // An entity can be a player
     Player(PlayerData),
-    // Or invoked, with an optional parent
-    // XXX: Is the parent really useful?
-    Invoked(Option<u64>),
+    // A monster
+    Monster(MonsterData),
 }
 
 #[derive(Debug,Clone,Default)]
@@ -319,6 +315,11 @@ pub struct PlayerData {
     experience: u64,
     gold: u64,
     guild: String,
+}
+
+#[derive(Debug,Clone)]
+pub struct MonsterData {
+    class: Id<Monster>,
 }
 
 impl PlayerData {
