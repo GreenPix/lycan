@@ -24,11 +24,16 @@ impl Instance {
         let mut found = false;
         match self.entities.remove_if(entity, |e| { found = true; e.is_monster() }) {
             None => Err(if found { RemoveEntityError::IsPlayer } else { RemoveEntityError::NotFound }),
-            Some(_e) => {
+            Some(e) => {
                 // Send back to game?
 
                 let notification = Notification::entity_has_quit(entity.as_u64());
                 self.next_notifications.push(notification);
+                if let Some(actor) = e.get_actor() {
+                    self.actors.unregister_ai(actor);
+                } else {
+                    warn!("Found entity without attached actor: {:?}", e);
+                }
                 // TODO: Kick corresponding actor
                 Ok(())
             }

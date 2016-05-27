@@ -16,6 +16,7 @@ use data::{
 use data::UNIQUE_MAP;
 use messages::{EntityState};
 use instance::Instance;
+use actor::ActorId;
 
 use self::hitbox::RectangleHitbox;
 pub use self::double_iterator::{DoubleIterMut,OthersAccessor,OthersIter,OthersIterMut};
@@ -40,6 +41,7 @@ static DEFAULT_AI_SPEED: f32 = 5.0;
 pub struct Entity {
     id: Id<Entity>,
 
+    actor: Option<ActorId>,
     e_type: EntityType,
     position: Pnt2<f32>,
     // We probably won't save the speed ...
@@ -75,6 +77,7 @@ impl Entity {
             let mut e = Entity {
                 id: Id::new(),
 
+                actor: None,
                 e_type: e_type,
                 position: position,
                 speed: Vec2::new(0.0,0.0),
@@ -97,6 +100,14 @@ impl Entity {
 
     pub fn get_id(&self) -> Id<Self> {
         self.id
+    }
+
+    pub fn get_actor(&self) -> Option<ActorId> {
+        self.actor
+    }
+
+    pub fn set_actor(&mut self, actor: Option<ActorId>) {
+        self.actor = actor;
     }
 
     pub fn get_position(&self) -> Pnt2<f32> {

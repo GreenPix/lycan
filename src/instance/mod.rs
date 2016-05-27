@@ -68,6 +68,10 @@ impl Actors {
         self.external_actors.remove(&id)
     }
 
+    fn unregister_ai(&mut self, id: ActorId) -> Option<AiActor> {
+        self.internal_actors.remove(&id)
+    }
+
     fn broadcast_notifications<H:Handler>(&mut self,
                                           event_loop: &mut EventLoop<H>,
                                           notifications: &[Notification]) {
@@ -375,12 +379,13 @@ impl Instance {
         // TODO: The event loop will not exit immediately ... we should handle that
     }
 
-    fn assign_entity_to_actor(&mut self, id: ActorId, entity: Entity) {
+    fn assign_entity_to_actor(&mut self, id: ActorId, mut entity: Entity) {
         let entity_id = entity.get_id();
         let position = entity.get_position();
         let skin = entity.get_skin();
         let pv = entity.get_pv();
         if self.actors.assign_entity_to_actor(id, entity_id) {
+            entity.set_actor(Some(id));
             self.entities.push(entity);
             let notification = Notification::new_entity(entity_id.as_u64(), position, skin, pv);
             self.next_notifications.push(notification);
@@ -421,7 +426,8 @@ impl Instance {
         let id = ai.get_id();
         self.actors.register_internal(ai);
 
-        let entity = Entity::fake_ai(class, x, y);
+        let mut entity = Entity::fake_ai(class, x, y);
+        entity.set_actor(Some(id));
         let entity_id = entity.get_id();
         self.assign_entity_to_actor(id, entity);
         entity_id
