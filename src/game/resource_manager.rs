@@ -268,7 +268,7 @@ impl RetreiveFromId<Player> for Entity {
 impl RetreiveFromId for Map {
     type Info = ();
     fn retrieve(id: Id<Map>, _: ()) -> Result<Map,Error> {
-        Ok(Map::new(id))
+        Ok(Map::new(id, format!("Map ID {}", id)))
     }
 }
 

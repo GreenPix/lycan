@@ -72,3 +72,9 @@ pub struct GetInstances {
     pub map: Id<Map>,
     pub created_at: String,
 }
+
+#[derive(Serialize,Debug,Clone)]
+pub struct GetMaps {
+    pub uuid: Id<Map>,
+    pub name: String,
+}

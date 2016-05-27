@@ -22,7 +22,7 @@ use lycan_serialize::AuthenticationToken;
 use id::{Id,WeakId};
 use messages::Request as LycanRequest;
 use messages::Command;
-use data::{ConnectCharacterParam,Map,GetInstances};
+use data::{ConnectCharacterParam,Map,GetInstances,GetMaps};
 use entity::Entity;
 use instance::management::*;
 use game::Game;
@@ -117,9 +117,12 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
 
     let clone = sender.clone();
     server.get("/maps", correct_bounds(move |_request| {
-        let maps = define_request!(clone, |game| {
+        let maps_inner = define_request!(clone, |game| {
             game.resource_manager.get_all_maps()
         });
+        let maps: Vec<_> = maps_inner.into_iter()
+                                     .map(|m| GetMaps { uuid: m.id, name: m.name.clone() })
+                                     .collect();
         Ok(Response::with((Status::Ok,JsonWriter(maps))))
     }));
 
