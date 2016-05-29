@@ -4,7 +4,7 @@ use std::collections::{hash_set,HashSet,HashMap};
 
 use mio::*;
 
-use id::{self,Id};
+use id::{self,Id,HasId};
 use entity::{Entity,EntityStore};
 use messages::{self,Command,Notification,EntityOrder};
 use messages::{NetworkCommand};
@@ -164,4 +164,8 @@ impl CommandBuffer {
     fn get_commands(&mut self, other: &mut Vec<Command>) {
         other.append(&mut self.commands);
     }
+}
+
+impl HasId for NetworkActor {
+    type Type = u64;
 }

@@ -1,18 +1,22 @@
-use std::collections::hash_map::{HashMap,Entry};
+use std::collections::hash_map::{self,HashMap,Entry};
 use std::thread;
 use std::fmt::{Formatter,Display,Error};
 use std::io;
 use std::mem;
+use std::time::Duration as StdDuration;
 
 use mio::*;
-use time::{Duration,SteadyTime};
+use time::{self,Duration,SteadyTime,Tm};
 
-use id::Id;
+use id::{Id,HasId};
 use entity::{self,Entity,EntityStore};
 use actor::{NetworkActor,ActorId,AiActor};
 use messages::{self,Command,Notification,Request};
 use network::Message;
 use scripts::{BehaviourTrees,AaribaScripts};
+use data::{Map,Monster};
+
+pub mod management;
 
 lazy_static! {
     // 16.666 ms (60 Hz)
@@ -20,8 +24,10 @@ lazy_static! {
         DEFAULT_REFRESH_PERIOD.num_microseconds().unwrap() as f32 / 1000000.0
     };
     static ref DEFAULT_REFRESH_PERIOD: Duration = Duration::microseconds(16666);
+    static ref GAME_PLAYER_REFRESH_PERIOD: Duration = Duration::seconds(2);
     //static ref DEFAULT_REFRESH_PERIOD: Duration = Duration::milliseconds(1000);
 }
+
 
 #[derive(Debug,Default)]
 struct Actors {
@@ -60,6 +66,10 @@ impl Actors {
 
     fn unregister_client(&mut self, id: ActorId) -> Option<NetworkActor> {
         self.external_actors.remove(&id)
+    }
+
+    fn unregister_ai(&mut self, id: ActorId) -> Option<AiActor> {
+        self.internal_actors.remove(&id)
     }
 
     fn broadcast_notifications<H:Handler>(&mut self,
@@ -139,12 +149,17 @@ impl Actors {
         }
         Ok(())
     }
+
+    fn drain_external(&mut self) -> hash_map::Drain<ActorId,NetworkActor> {
+        self.external_actors.drain()
+    }
 }
 
 
 pub struct Instance {
     id: Id<Instance>,
 
+    map_id: Id<Map>,
     entities: EntityStore,
     actors: Actors,
     request: Sender<Request>,
@@ -155,6 +170,8 @@ pub struct Instance {
     next_notifications: Vec<Notification>,
     scripts: AaribaScripts,
     trees: BehaviourTrees,
+    shutting_down: bool,
+    created_at: Tm,
 
     // XXX: Do we need to change the refresh period?
     refresh_period: Duration,
@@ -164,31 +181,40 @@ impl Instance {
     pub fn spawn_instance(request: Sender<Request>,
                           scripts: AaribaScripts,
                           trees: BehaviourTrees,
-                          ) -> (Id<Self>, Sender<Command>) {
-        let mut instance = Instance::new(request, scripts, trees);
+                          map_id: Id<Map>,
+                          ) -> InstanceRef {
+        let mut instance = Instance::new(request, scripts, trees, map_id);
         let mut config = EventLoopConfig::default();
         config.timer_tick_ms((instance.refresh_period.num_milliseconds() / 2) as u64);
         let mut event_loop = EventLoop::configured(config).unwrap();
         let id = instance.get_id();
+        let created_at = instance.created_at;
         let sender = event_loop.channel();
         thread::spawn(move || {
             debug!("Started instance {}", instance.id);
             event_loop.timeout_ms(InstanceTick::CalculateTick,
                                   instance.refresh_period.num_milliseconds() as u64)
                       .unwrap();
+            event_loop.timeout_ms(InstanceTick::UpdatePlayers,
+                                  GAME_PLAYER_REFRESH_PERIOD.num_milliseconds() as u64)
+                      .unwrap();
             instance.last_tick = SteadyTime::now();
             event_loop.run(&mut instance).unwrap();
             debug!("Stopping instance {}", instance.id);
         });
-        (id, sender)
+        InstanceRef::new(id, sender, created_at, map_id)
     }
 
     fn new(request: Sender<Request>,
            scripts: AaribaScripts,
            trees: BehaviourTrees,
+           map_id: Id<Map>,
            ) -> Instance {
+        use uuid::Uuid;
+
         let mut instance = Instance {
             id: Id::new(),
+            map_id: map_id,
             entities: EntityStore::new(),
             actors: Default::default(),
             request: request,
@@ -199,10 +225,14 @@ impl Instance {
             next_notifications: Default::default(),
             scripts: scripts,
             trees: trees,
+            shutting_down: false,
+            created_at: time::now_utc(),
         };
 
         // XXX Fake an AI on the map
-        instance.add_fake_ai();
+        let class_str = "67e6001e-d735-461d-b32e-2e545e12b3d2";
+        let uuid = Uuid::parse_str(class_str).unwrap();
+        instance.add_fake_ai(Id::forge(uuid), 0.0, 0.0);
         instance
     }
 
@@ -212,7 +242,7 @@ impl Instance {
                 self.register_client(event_loop, actor, entities);
             }
             Command::Shutdown => {
-                self.shutdown(event_loop);
+                self.shutdown(Some(event_loop));
             }
             Command::UnregisterActor(id) => {
                 self.unregister_client(event_loop, id);
@@ -295,36 +325,67 @@ impl Instance {
         }
     }
 
-    fn shutdown(&mut self, event_loop: &mut EventLoop<Self>) {
-        let state = ShuttingDownState::new(self.id);
-        /*
-        for (token, actor) in self.actors.drain() {
-            actor.deregister(event_loop);
-            // TODO: Check first if the actor needs to be sent back to the Game
+    fn shutdown(&mut self, mut event_loop: Option<&mut EventLoop<Self>>) {
+        let mut state = ShuttingDownState::new(self.id);
+        for (actor_id, actor) in self.actors.drain_external() {
+            // Weird thing ... cannot write Some(ref mut ev) ...
+            match event_loop.take() {
+                Some(ev) => {
+                    let _ = actor.deregister(ev);
+                    event_loop = Some(ev);
+                },
+                None => {}
+            }
             let mut entities = Vec::new();
             for entity_id in actor.entities_iter() {
-                match self.entities.remove(entity_id) {
-                    Some(entity) => entities.push(entity),
-                    None => error!("Instance {}: Inconsistency between actor {} and its entities: \
+                match self.entities.remove(*entity_id) {
+                    Some(e) => entities.push(e),
+                    None => {
+                        error!("Instance {}: Inconsistency between actor {} and its entities: \
                                     entity {} is not present in the map array",
-                                   self.id, token, entity_id),
+                                    self.id, actor_id, entity_id);
+                    }
                 }
             }
+
             state.push(actor, entities);
         }
-        */
-        self.request.send(Request::InstanceShuttingDown(state)).unwrap();
-        event_loop.shutdown();
-        unimplemented!();
+
+        let mut request_opt = Some(Request::InstanceShuttingDown(state));
+        while let Some(request) = request_opt.take() {
+            if let Err(e) = self.request.send(request) {
+                match e {
+                    NotifyError::Io(e) => {
+                        error!("IO Error when sending back state: {}", e);
+                    }
+                    NotifyError::Full(req) => {
+                        ::std::thread::sleep(StdDuration::from_millis(100));
+                        // Retry
+                        request_opt = Some(req);
+                    }
+                    NotifyError::Closed(Some(state2)) => {
+                        // TODO: Something to do with the state we got back?
+                        error!("The Game instance has hung up!");
+                    }
+                    NotifyError::Closed(None) => {
+                        error!("The Game instance has hung up!");
+                    }
+                }
+            }
+        }
+        self.shutting_down = true;
+        event_loop.map(|e| e.shutdown());
+
         // TODO: The event loop will not exit immediately ... we should handle that
     }
 
-    fn assign_entity_to_actor(&mut self, id: ActorId, entity: Entity) {
+    fn assign_entity_to_actor(&mut self, id: ActorId, mut entity: Entity) {
         let entity_id = entity.get_id();
         let position = entity.get_position();
         let skin = entity.get_skin();
         let pv = entity.get_pv();
         if self.actors.assign_entity_to_actor(id, entity_id) {
+            entity.set_actor(Some(id));
             self.entities.push(entity);
             let notification = Notification::new_entity(entity_id.as_u64(), position, skin, pv);
             self.next_notifications.push(notification);
@@ -360,13 +421,16 @@ impl Instance {
         mem::swap(&mut self.prev_notifications, &mut self.next_notifications);
     }
 
-    fn add_fake_ai(&mut self) {
+    fn add_fake_ai(&mut self, class: Id<Monster>, x: f32, y: f32) -> Id<Entity> {
         let ai = AiActor::fake(self.trees.generate_tree("zombie").unwrap());
         let id = ai.get_id();
         self.actors.register_internal(ai);
 
-        let entity = Entity::fake_ai();
+        let mut entity = Entity::fake_ai(class, x, y);
+        entity.set_actor(Some(id));
+        let entity_id = entity.get_id();
         self.assign_entity_to_actor(id, entity);
+        entity_id
     }
 }
 
@@ -398,11 +462,63 @@ impl Handler for Instance {
                 let sleep = (self.refresh_period - self.lag).num_milliseconds() as u64;
                 event_loop.timeout_ms(InstanceTick::CalculateTick, sleep).unwrap();
             }
+            InstanceTick::UpdatePlayers => {
+                let vec = self.entities
+                    .iter()
+                    .filter(|e| e.is_player())
+                    .map(|e| e.into_management_representation(self.id, self.map_id))
+                    .collect();
+                self.request.send(Request::PlayerUpdate(vec)).unwrap();
+                let sleep = GAME_PLAYER_REFRESH_PERIOD.num_milliseconds() as u64;
+                event_loop.timeout_ms(InstanceTick::UpdatePlayers, sleep).unwrap();
+            }
         }
     }
 
     fn interrupted(&mut self, _event_loop: &mut EventLoop<Self>) {
         error!("Interrupted");
+    }
+}
+
+#[derive(Clone)]
+pub struct InstanceRef {
+    id: Id<Instance>,
+    sender: Sender<Command>,
+    created_at: Tm,
+    map: Id<Map>,
+}
+
+impl InstanceRef {
+    pub fn new(id: Id<Instance>,
+               sender: Sender<Command>,
+               created_at: Tm,
+               map: Id<Map>) -> InstanceRef {
+        InstanceRef {
+            id: id,
+            sender: sender,
+            created_at: created_at,
+            map: map,
+        }
+    }
+
+    pub fn send(&self, command: Command) -> Result<(),NotifyError<Command>> {
+        self.sender.send(command)
+    }
+
+    pub fn get_id(&self) -> Id<Instance> {
+        self.id
+    }
+
+    pub fn get_map(&self) -> Id<Map> {
+        self.map
+    }
+
+    pub fn created_at(&self) -> &Tm {
+        &self.created_at
+    }
+
+    pub fn get_sender(&self) -> &Sender<Command> {
+        &self.sender
     }
 }
 
@@ -421,11 +537,14 @@ pub enum InstanceTick {
     /// This will among other things execute all actions made by players
     /// since the last tick, resolve AI trees and send the update to players
     CalculateTick,
+    /// This will update the Game's knowledge of all Player in this map
+    UpdatePlayers,
 }
 
 #[derive(Debug)]
 pub struct ShuttingDownState {
     pub id: Id<Instance>,
+    pub was_saved: bool,
     pub external_actors: Vec<(NetworkActor,Vec<Entity>)>,
     //pub internal_actors: Vec<(Actor,Vec<Entity>)>,
 }
@@ -434,6 +553,7 @@ impl ShuttingDownState {
     pub fn new(id: Id<Instance>) -> ShuttingDownState {
         ShuttingDownState {
             id: id,
+            was_saved: false,
             external_actors: Vec::new(),
         }
     }
@@ -441,4 +561,27 @@ impl ShuttingDownState {
     pub fn push(&mut self, actor: NetworkActor, entities: Vec<Entity>) {
         self.external_actors.push((actor, entities));
     }
+}
+
+impl Drop for ShuttingDownState {
+    fn drop(&mut self) {
+        if !self.was_saved {
+            // The state has not been processed and saved
+            // This is our last chance to save all the modifications somewhere
+            error!("Failed to save the state of instance {}\n{:#?}", self.id, self.external_actors);
+        }
+    }
+}
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        if !self.shutting_down {
+            error!("Instance {} has not been shutdown properly", self.id);
+            self.shutdown(None);
+        }
+    }
+}
+
+impl HasId for Instance {
+    type Type = u64;
 }

@@ -1,2 +1,3 @@
 #! /bin/bash
-python -m SimpleHTTPServer
+PORT=9000
+python -m SimpleHTTPServer $PORT

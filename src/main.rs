@@ -14,7 +14,7 @@ Usage:
     lycan [options]
 
 Options:
-    -c URL, --configuration URL     URL of the configuration server [default: http://localhost:8000]
+    -c URL, --configuration URL     URL of the configuration server [default: http://localhost:9000]
     -p PORT, --port PORT            Listening port [default: 7777]
     -h, --help                      Prints this message
 "#;

@@ -21,10 +21,20 @@ docopt = "0.6"
 nalgebra = "0.5"
 smallvec = "0.1"
 rand = "0.3"
-hyper = "0.6.16"
+hyper = "0.8"
 bytes = "0.3"
 serde = "0.7"
 serde_json = "0.7"
+uuid = { version = "0.2", features = ["rand","serde"] }
+
+# Iron and related crates
+iron = "0.3"
+mount = "0.1.0"
+router = "*"
+bodyparser = "*"
+plugin = "*"
+modifier = "*"
+iron-error-router = "*"
 
 [build-dependencies]
 serde_codegen = "*"
@@ -46,4 +56,4 @@ doc = false
 [features]
 json = ["lycan-serialize/json"]
 
-default = ["json"]
+default = ["json", "iron/ssl"]

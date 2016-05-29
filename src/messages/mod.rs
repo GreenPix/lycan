@@ -11,6 +11,7 @@ pub use lycan_serialize::EntityOrder;
 
 use std::fmt::{self,Formatter,Debug};
 use std::boxed::FnBox;
+use std::sync::mpsc::Sender;
 
 use mio::{Handler,EventLoop};
 use nalgebra::{Pnt2,Vec2};
@@ -20,6 +21,7 @@ use game::Game;
 use actor::{NetworkActor,ActorId};
 use id::Id;
 use instance::{Instance,ShuttingDownState};
+use data::EntityManagement;
 
 mod conversions;
 
@@ -36,8 +38,7 @@ impl Command {
     /// Should only be used for debugging or testing
     pub fn new<T>(closure: T) -> Command
     where T: FnOnce(&mut Instance, &mut EventLoop<Instance>),
-          T: Send + 'static,
-          T: Handler {
+          T: Send + 'static {
         let command = Arbitrary(Box::new(closure));
         Command::Arbitrary(command)
     }
@@ -61,11 +62,16 @@ impl <T: Handler> Debug for Arbitrary<T> {
 #[derive(Debug)]
 pub enum Request {
     Arbitrary(Arbitrary<Game>),
+
+    // Responses from Instances
     UnregisteredActor {
         actor: NetworkActor,
         entities: Vec<Entity>,
     },
     InstanceShuttingDown(ShuttingDownState),
+    PlayerUpdate(Vec<EntityManagement>),
+
+    // Callback from ResourceManager
     JobFinished(usize),
 }
 

@@ -1,5 +1,5 @@
 tree zombie {
-        sequence {
+        priority {
                 get_closest_target,
                 walk_to_target,
                 print_text("EAAAAAATTTTTT"),

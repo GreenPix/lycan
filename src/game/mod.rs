@@ -7,12 +7,15 @@ use std::boxed::FnBox;
 use mio::*;
 use mio::tcp::TcpListener;
 
+use lycan_serialize::AuthenticationToken;
+
 use utils;
-use instance::Instance;
+use instance::{InstanceRef,Instance};
 use actor::{NetworkActor,ActorId};
-use id::Id;
-use data::{Player,Map};
-use entity::{Entity,EntityType};
+use id::{Id,HasId,WeakId};
+use data::{Player,Map,EntityManagement,EntityType};
+use data::UNIQUE_MAP;
+use entity::{Entity};
 use messages::{Command,Request,NetworkNotification};
 use network::Message;
 use scripts::{AaribaScripts,BehaviourTrees};
@@ -23,16 +26,12 @@ use self::arriving_client::ArrivingClientManager;
 mod authentication;
 mod resource_manager;
 mod arriving_client;
+mod management;
 
 const RESOURCE_MANAGER_THREADS: usize = 2;
 
 const SERVER: Token = Token(0);
 const UDP_SOCKET: Token = Token(1);
-
-// XXX: Hack to remove ... currently we consider only one map
-lazy_static!{
-    static ref UNIQUE_MAP: Map = Map::new(Id::forge(1));
-}
 
 #[derive(Debug,Clone)]
 pub struct GameParameters {
@@ -41,12 +40,16 @@ pub struct GameParameters {
 }
 
 pub struct Game {
-    instances: HashMap<Id<Map>, HashMap<Id<Instance>, Sender<Command>>>,
-    player_positions: HashMap<Id<Player>, Id<Instance>>,
+    // Keep track of all _active_ (not shuting down) instances, indexed by map ID
+    map_instances: HashMap<Id<Map>, HashMap<Id<Instance>, InstanceRef>>,
+    // Keep track of all instances still alive
+    instances: HashMap<Id<Instance>, InstanceRef>,
+    players: HashMap<Id<Player>, EntityManagement>,
     server: TcpListener,
     resource_manager: ResourceManager,
     arriving_clients: ArrivingClientManager,
     callbacks: Callbacks,
+    shutdown: bool,
 
     // TODO: Should this be integrated with the resource manager?
     scripts: AaribaScripts,
@@ -62,12 +65,14 @@ impl Game {
         base_url: String,
         ) -> Game {
         Game {
+            map_instances: HashMap::new(),
             instances: HashMap::new(),
-            player_positions: HashMap::new(),
+            players: HashMap::new(),
             server: server,
             resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS, sender, base_url),
             arriving_clients: ArrivingClientManager::new(),
             callbacks: Callbacks::new(),
+            shutdown: false,
             scripts: scripts,
             trees: trees,
         }
@@ -85,6 +90,7 @@ impl Game {
         let mut event_loop = try!(EventLoop::new());
         try!(event_loop.register(&server, SERVER, EventSet::all(), PollOpt::level()));
         let sender = event_loop.channel();
+        management::start_management_api(sender.clone());
         let mut game = Game::new(
             server,
             scripts,
@@ -98,7 +104,9 @@ impl Game {
         for (tok, id) in fake_tokens {
             game.arriving_clients.new_auth_tok(tok, id);
         }
-        game.instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
+        let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
+        game.map_instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
+        // End hacks
 
         thread::spawn(move || {
             debug!("Started game");
@@ -118,19 +126,23 @@ impl Game {
                 // TODO: Store it or change its map ...
 
                 for entity in entities {
-                    let player: Option<Player> = entity.into();
-                    if let Some(player) = player {
-                        self.player_positions.remove(&player.id);
-
-                        let path = format!("./scripts/entities/{}", player.id);
-                        utils::serialize_to_file(path, &player);
-                    }
-
+                    self.entity_leaving(entity);
                 }
             }
-            Request::InstanceShuttingDown(state) => {
+            Request::InstanceShuttingDown(mut state) => {
                 debug!("Instance {} shutting down. State {:?}", state.id, state);
-                // TODO: Do something?
+                self.instances.remove(&state.id);
+                for (_actor, entities) in state.external_actors.drain(..) {
+                    for entity in entities {
+                        self.entity_leaving(entity);
+                    }
+                    // Drop the client without goodbye?
+                }
+                state.was_saved = true;
+
+                if self.shutdown && self.instances.is_empty() {
+                    event_loop.shutdown();
+                }
             }
             Request::JobFinished(job) => {
                 let callbacks = self.callbacks.get_callbacks(job);
@@ -138,7 +150,28 @@ impl Game {
                     cb.call_box((event_loop, self));
                 }
             }
+            Request::PlayerUpdate(players) => {
+                for player in players {
+                    let id = if let EntityType::Player(ref p) = player.entity_type {
+                        p.uuid
+                    } else {
+                        continue;
+                    };
+                    self.players.insert(id, player);
+                }
+            }
         }
+    }
+
+    fn start_shutdown(&mut self, event_loop: &mut EventLoop<Self>) {
+        self.shutdown = true;
+        for (_id, instances) in self.map_instances.drain() {
+            for instance in instances.values() {
+                let _ = instance.send(Command::Shutdown);
+            }
+        }
+        let _ = event_loop.deregister(&self.server);
+        // TODO: Drop self.serve so it does not listen any more
     }
 
     // Spawn a new instance if needed
@@ -149,7 +182,7 @@ impl Game {
         actor: NetworkActor,
         entities: Vec<Entity>,
         ) {
-        match self.instances.get_mut(&map) {
+        match self.map_instances.get_mut(&map) {
             Some(instances) => {
                 // TODO: Load balancing
                 let register_new_instance = match instances.iter_mut().nth(0) {
@@ -160,31 +193,26 @@ impl Game {
                     }
                     None => {
                         // No instance for this map, spawn one
-                        let (id, instance) = Instance::spawn_instance(
+                        let instance = Instance::spawn_instance(
                             event_loop.channel(),
                             self.scripts.clone(),
                             self.trees.clone(),
+                            map,
                             );
                         instance.send(Command::NewClient(actor,entities)).unwrap();
-                        Some((id, instance))
+                        Some(instance)
                     }
                 };
 
                 // Because of the borrow checker
-                if let Some((id, instance)) = register_new_instance {
-                    instances.insert(id, instance);
+                if let Some(instance) = register_new_instance {
+                    let id = instance.get_id();
+                    instances.insert(id, instance.clone());
+                    self.instances.insert(id, instance);
                 }
             }
             None => {
                 error!("Trying to access nonexisting map {}", map);
-            }
-        }
-    }
-
-    fn track_player(&mut self, entities: &[Entity], instance: Id<Instance>) {
-        for entity in entities {
-            if let EntityType::Player(ref player) = *entity.get_type() {
-                self.player_positions.insert(player.get_id(), instance);
             }
         }
     }
@@ -208,6 +236,22 @@ impl Game {
                 unimplemented!();
             }
         }
+    }
+
+    fn entity_leaving(&mut self, entity: Entity) {
+        let player: Option<Player> = entity.into();
+        if let Some(player) = player {
+            self.players.remove(&player.id);
+
+            let path = format!("./scripts/entities/{}", player.id);
+            utils::serialize_to_file(path, &player);
+        }
+    }
+
+    fn connect_character(&mut self, id: Id<Player>, token: AuthenticationToken) {
+        debug!("Connecting character {} with token {}", id, token.0);
+        self.arriving_clients.new_auth_tok(token, id);
+        self.resource_manager.load_player(id);
     }
 }
 
@@ -271,4 +315,8 @@ impl Callbacks {
     fn get_callbacks(&mut self, job: usize) -> Vec<Callback> {
         self.callbacks.remove(&job).unwrap_or(Vec::new())
     }
+}
+
+impl HasId for Game {
+    type Type = u64;
 }

@@ -157,7 +157,7 @@ impl <'a,'b> BehaviourTreeNode<Context<'a,'b>> for GetClosestTarget {
             }
         }
         context.storage.target = closest_other;
-        println!("Get closest target: found {:?} at sqdist {}", closest_other, closest_other_sqdistance);
+        debug!("Get closest target: found {:?} at sqdist {}", closest_other, closest_other_sqdistance);
         VisitResult::Success
     }
 }
