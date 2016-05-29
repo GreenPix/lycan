@@ -1,6 +1,6 @@
 #! /bin/bash
 DEFAULT_SERVER=localhost
-DEFAULT_PORT=8001
+DEFAULT_PORT=9001
 DEFAULT_SECRET="abcdefgh"
 
 print_syntax() {

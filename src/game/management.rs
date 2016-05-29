@@ -48,7 +48,7 @@ pub fn start_management_api(sender: MioSender<LycanRequest>) {
         chain.link_after(error_router);
 
         let iron = Iron::new(chain);
-        iron.http("127.0.0.1:8001").unwrap();
+        iron.http("127.0.0.1:9001").unwrap();
     });
 }
 
