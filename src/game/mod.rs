@@ -153,7 +153,7 @@ impl Game {
             Request::PlayerUpdate(players) => {
                 for player in players {
                     let id = if let EntityType::Player(ref p) = player.entity_type {
-                        p.id
+                        p.uuid
                     } else {
                         continue;
                     };

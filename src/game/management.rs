@@ -121,7 +121,7 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
             game.resource_manager.get_all_maps()
         });
         let maps: Vec<_> = maps_inner.into_iter()
-                                     .map(|m| GetMaps { uuid: m.id, name: m.name.clone() })
+                                     .map(|m| GetMaps { uuid: m.get_id(), name: m.name.clone() })
                                      .collect();
         Ok(Response::with((Status::Ok,JsonWriter(maps))))
     }));

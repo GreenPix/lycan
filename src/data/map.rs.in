@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Map {
-    pub id: Id<Map>,
+    pub uuid: Id<Map>,
     pub name: String,
 }
 
@@ -16,13 +16,13 @@ impl HasForgeableId for Map {}
 impl Map {
     pub fn new(id: Id<Map>, name: String) -> Map {
         Map {
-            id: id,
+            uuid: id,
             name: name,
         }
     }
 
     pub fn get_id(&self) -> Id<Map> {
-        self.id
+        self.uuid
     }
 
     pub fn get_name(&self) -> &str {

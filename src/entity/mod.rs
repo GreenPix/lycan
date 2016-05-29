@@ -270,7 +270,7 @@ impl Entity {
         let entity_type = match self.e_type {
             EntityType::Player(ref player) => {
                 let player_struct = PlayerStruct {
-                    id: player.id,
+                    id: player.uuid,
                     name: player.name.clone(),
                     gold: player.gold,
                     guild: player.guild.clone(),

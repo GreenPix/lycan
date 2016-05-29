@@ -28,7 +28,7 @@ pub enum EntityType {
 
 #[derive(Serialize,Debug,Clone)]
 pub struct PlayerStruct {
-    pub id: Id<Player>,
+    pub uuid: Id<Player>,
     pub name: String,
     pub gold: u64,
     pub experience: u64,
