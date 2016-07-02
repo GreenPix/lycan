@@ -1,3 +1,5 @@
+use std::iter;
+
 use quad_tree::QuadTree;
 use quad_tree::Rectangle;
 use nalgebra::Point2;
@@ -8,30 +10,46 @@ use data::Map as DataMap;
 use instance::SEC_PER_UPDATE;
 
 use self::hitbox::RectangleHitbox;
+use self::pathfinding::AStarTiles;
 
 pub mod hitbox;
+mod pathfinding;
+
+// Convention: only positive positions
+// (0.0, 0.0) is the bottom left corner
 
 // TODO: Find a better place?
 pub struct Map {
     pub id: Id<DataMap>,
     pub obstacles: Obstacles,
+    pub pathfinding_tiles: AStarTiles,
 }
 
 impl Map {
     pub fn new(data_map: Id<DataMap>) -> Map {
         // TODO: Derive obtacles from map data
-        let area = Rectangle::new(-100.0, -100.0, 100.0, 100.0);
-        let obstacles = vec![
-            Obstacle::new(-10, 0),
-            Obstacle::new(10, 10),
-            Obstacle::new(10, 14),
-            Obstacle::new(10, 18),
-            Obstacle::new(10, 22),
-            Obstacle::new(10, 26),
+        let width = 100;
+        let height = 100;
+        let obstacle_pos = [
+            (10, 10),
+            (10, 14),
+            (10, 18),
+            (10, 22),
+            (10, 26),
         ];
+
+        let mut tiles: Vec<u8> = iter::repeat(1).take(width*height).collect();
+        for &(x, y) in obstacle_pos.iter() {
+            tiles[y * width + x] = 0;
+        }
+
+        let area = Rectangle::new(0.0, 0.0, width as f32, height as f32);
+        let obstacle_list = obstacle_pos.iter().map(|&(x,y)| Obstacle::new(x,y)).collect();
+
         Map {
             id: data_map,
-            obstacles: Obstacles::new(obstacles, area),
+            pathfinding_tiles: AStarTiles::new(tiles, width),
+            obstacles: Obstacles::new(obstacle_list, area),
         }
     }
 }
@@ -105,9 +123,9 @@ pub struct Obstacle {
 
 impl Obstacle {
     // The granularity is in tiles
-    fn new(x: i16, y: i16) -> Obstacle {
+    fn new(x: usize, y: usize) -> Obstacle {
         Obstacle {
-            position: Point2::new(x as f32, y as f32),
+            position: Point2::new(x as f32 + 0.5, y as f32 + 0.5),
             hitbox: RectangleHitbox::new(0.5, 0.5),
         }
     }

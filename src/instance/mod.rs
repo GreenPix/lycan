@@ -233,7 +233,7 @@ impl Instance {
         // XXX Fake an AI on the map
         let class_str = "67e6001e-d735-461d-b32e-2e545e12b3d2";
         let uuid = Uuid::parse_str(class_str).unwrap();
-        instance.add_fake_ai(Id::forge(uuid), 0.0, 0.0);
+        instance.add_fake_ai(Id::forge(uuid), 40.0, 40.0);
         instance
     }
 

@@ -184,8 +184,8 @@ impl Entity {
             wisdom:         7,
         };
         let position = Position {
-            x: 0.0,
-            y: 0.0,
+            x: 50.0,
+            y: 50.0,
             map: UNIQUE_MAP.get_id()
         };
         let name = format!("Player {}", id);

@@ -54,11 +54,13 @@ pub struct PositionInstance {
 #[derive(Deserialize,Debug,Clone,Copy)]
 pub struct SpawnMonster {
     pub monster_class: Id<Monster>,
-    #[serde(default)]
+    #[serde(default = "default_pos")]
     pub x: f32,
-    #[serde(default)]
+    #[serde(default = "default_pos")]
     pub y: f32,
 }
+
+fn default_pos() -> f32 { 40.0 }
 
 #[derive(Deserialize,Debug,Clone)]
 pub struct ConnectCharacterParam {
