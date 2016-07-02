@@ -14,7 +14,7 @@ use std::boxed::FnBox;
 use std::sync::mpsc::Sender;
 
 use mio::{Handler,EventLoop};
-use nalgebra::{Pnt2,Vec2};
+use nalgebra::{Point2,Vector2};
 
 use entity::{Entity};
 use game::Game;
@@ -96,8 +96,8 @@ pub enum Notification {
     },
     Position {
         entity: u64,
-        position: Pnt2<f32>,
-        speed: Vec2<f32>,
+        position: Point2<f32>,
+        speed: Vector2<f32>,
         pv: u64,
     },
     ThisIsYou {
@@ -105,7 +105,7 @@ pub enum Notification {
     },
     NewEntity {
         entity: u64,
-        position: Pnt2<f32>,
+        position: Point2<f32>,
         skin: u64,
         pv: u64,
     },
@@ -131,7 +131,7 @@ impl Notification {
         }
     }
 
-    pub fn position(id: u64, position: Pnt2<f32>, speed: Vec2<f32>, pv: u64) -> Notification {
+    pub fn position(id: u64, position: Point2<f32>, speed: Vector2<f32>, pv: u64) -> Notification {
         Notification::Position {
             entity: id,
             position: position,
@@ -146,7 +146,7 @@ impl Notification {
         }
     }
 
-    pub fn new_entity(id: u64, position: Pnt2<f32>, skin: u64, pv: u64) -> Notification {
+    pub fn new_entity(id: u64, position: Point2<f32>, skin: u64, pv: u64) -> Notification {
         Notification::NewEntity {
             entity: id,
             position: position,
@@ -178,14 +178,14 @@ pub enum Order {
 #[derive(Debug)]
 pub struct EntityState {
     id: u64,
-    position: Pnt2<f32>,
+    position: Point2<f32>,
     orientation: Direction,
     // Skin
     // Hitbox
 }
 
 impl EntityState {
-    pub fn new(id: Id<Entity>, position: Pnt2<f32>, orientation: Direction) -> EntityState {
+    pub fn new(id: Id<Entity>, position: Point2<f32>, orientation: Direction) -> EntityState {
         EntityState {
             id: id.as_u64(),
             position: position,

@@ -3,15 +3,17 @@
 
 use std::collections::HashMap;
 
+use collisions::hitbox::RectangleHitbox;
 use super::{Entity,Order,EntityStore,OthersAccessor};
 use messages::Notification;
 use id::Id;
-use nalgebra::Vec2;
-use nalgebra::Pnt2;
+use nalgebra::Vector2;
+use nalgebra::Point2;
 use aariba::expressions::{Store};
 
 use lycan_serialize::Direction;
 use instance::SEC_PER_UPDATE;
+use collisions::Map;
 use scripts::AaribaScripts;
 
 // Reason why an action has been rejected
@@ -26,7 +28,9 @@ pub fn update(
     entities: &mut EntityStore,
     notifications: &mut Vec<Notification>,
     scripts: &AaribaScripts,
+    map: &Map,
     ) {
+    update_positions(entities, map);
     {
         let mut double_iterator = entities.iter_mut_wrapper();
         while let Some((entity, mut wrapper)) = double_iterator.next_item() {
@@ -35,6 +39,27 @@ pub fn update(
         }
     }
     generate_position_updates(entities, notifications);
+}
+
+fn update_positions(entities: &mut EntityStore, map: &Map) {
+    for entity in entities.iter_mut() {
+        let unitary_speed = if entity.walking {
+            match entity.orientation {
+                Direction::North => Vector2::new(0.0, 1.0),
+                Direction::South => Vector2::new(0.0, -1.0),
+                Direction::East  => Vector2::new(1.0, 0.0),
+                Direction::West  => Vector2::new(-1.0, 0.0),
+            }
+        } else {
+            Vector2::new(0.0, 0.0)
+        };
+        let speed = unitary_speed * entity.stats.speed;
+        let (new_pos, new_speed) = map.obstacles.resolve_collision(entity.position,
+                                                                   entity.hitbox,
+                                                                   speed);
+        entity.position = new_pos;
+        entity.speed = new_speed;
+    }
 }
 
 fn generate_position_updates(
@@ -114,22 +139,6 @@ impl Entity {
                 }
             }
         }
-
-        // Assume no collisions at the moment ...
-        let unitary_speed = if self.walking {
-            match self.orientation {
-                Direction::North => Vec2::new(0.0, 1.0),
-                Direction::South => Vec2::new(0.0, -1.0),
-                Direction::East  => Vec2::new(1.0, 0.0),
-                Direction::West  => Vec2::new(-1.0, 0.0),
-            }
-        } else {
-            Vec2::new(0.0, 0.0)
-        };
-        let speed = unitary_speed * self.stats.speed;
-        let new_position = self.position + (speed * *SEC_PER_UPDATE);
-        self.position = new_position;
-        self.speed = speed;
     }
 }
 

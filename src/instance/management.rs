@@ -11,13 +11,13 @@ impl Instance {
     pub fn get_entities(&self) -> Vec<EntityManagement> {
         self.entities
             .iter()
-            .map(|e| e.into_management_representation(self.id, self.map_id))
+            .map(|e| e.into_management_representation(self.id, self.map.id))
             .collect()
     }
 
     pub fn spawn_monster(&mut self, monster: SpawnMonster) -> EntityManagement {
         let id = self.add_fake_ai(monster.monster_class, monster.x, monster.y);
-        self.entities.get(id).unwrap().into_management_representation(self.id, self.map_id)
+        self.entities.get(id).unwrap().into_management_representation(self.id, self.map.id)
     }
 
     pub fn remove_entity(&mut self, entity: WeakId<Entity>) -> Result<(),RemoveEntityError> {

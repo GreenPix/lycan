@@ -14,7 +14,8 @@ use actor::{NetworkActor,ActorId,AiActor};
 use messages::{self,Command,Notification,Request};
 use network::Message;
 use scripts::{BehaviourTrees,AaribaScripts};
-use data::{Map,Monster};
+use data::{Map as DataMap,Monster};
+use collisions::Map;
 
 pub mod management;
 
@@ -159,7 +160,7 @@ impl Actors {
 pub struct Instance {
     id: Id<Instance>,
 
-    map_id: Id<Map>,
+    map: Map,
     entities: EntityStore,
     actors: Actors,
     request: Sender<Request>,
@@ -181,7 +182,7 @@ impl Instance {
     pub fn spawn_instance(request: Sender<Request>,
                           scripts: AaribaScripts,
                           trees: BehaviourTrees,
-                          map_id: Id<Map>,
+                          map_id: Id<DataMap>,
                           ) -> InstanceRef {
         let mut instance = Instance::new(request, scripts, trees, map_id);
         let mut config = EventLoopConfig::default();
@@ -208,13 +209,13 @@ impl Instance {
     fn new(request: Sender<Request>,
            scripts: AaribaScripts,
            trees: BehaviourTrees,
-           map_id: Id<Map>,
+           map_id: Id<DataMap>,
            ) -> Instance {
         use uuid::Uuid;
 
         let mut instance = Instance {
             id: Id::new(),
-            map_id: map_id,
+            map: Map::new(map_id),
             entities: EntityStore::new(),
             actors: Default::default(),
             request: request,
@@ -409,7 +410,7 @@ impl Instance {
                                    &mut self.next_notifications,
                                    &self.prev_notifications);
 
-        entity::update(&mut self.entities, &mut self.next_notifications, &self.scripts);
+        entity::update(&mut self.entities, &mut self.next_notifications, &self.scripts, &self.map);
 
         let commands_buffer = self.actors.get_commands();
         for command in commands_buffer {
@@ -466,7 +467,7 @@ impl Handler for Instance {
                 let vec = self.entities
                     .iter()
                     .filter(|e| e.is_player())
-                    .map(|e| e.into_management_representation(self.id, self.map_id))
+                    .map(|e| e.into_management_representation(self.id, self.map.id))
                     .collect();
                 self.request.send(Request::PlayerUpdate(vec)).unwrap();
                 let sleep = GAME_PLAYER_REFRESH_PERIOD.num_milliseconds() as u64;
@@ -485,19 +486,19 @@ pub struct InstanceRef {
     id: Id<Instance>,
     sender: Sender<Command>,
     created_at: Tm,
-    map: Id<Map>,
+    map_id: Id<DataMap>,
 }
 
 impl InstanceRef {
     pub fn new(id: Id<Instance>,
                sender: Sender<Command>,
                created_at: Tm,
-               map: Id<Map>) -> InstanceRef {
+               map_id: Id<DataMap>) -> InstanceRef {
         InstanceRef {
             id: id,
             sender: sender,
             created_at: created_at,
-            map: map,
+            map_id: map_id,
         }
     }
 
@@ -509,8 +510,8 @@ impl InstanceRef {
         self.id
     }
 
-    pub fn get_map(&self) -> Id<Map> {
-        self.map
+    pub fn get_map(&self) -> Id<DataMap> {
+        self.map_id
     }
 
     pub fn created_at(&self) -> &Tm {

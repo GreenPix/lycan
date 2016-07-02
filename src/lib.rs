@@ -21,6 +21,7 @@ extern crate behaviour_tree;
 extern crate serde;
 extern crate serde_json;
 extern crate uuid;
+extern crate quad_tree;
 
 // Iron and related crates
 #[macro_use] extern crate iron;
@@ -40,6 +41,7 @@ pub mod id;
 pub mod data;
 pub mod ai;
 pub mod utils;
+mod collisions;
 mod scripts;
 mod network;
 

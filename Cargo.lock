@@ -18,8 +18,9 @@ dependencies = [
  "mio 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "modifier 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "mount 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "nalgebra 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "nalgebra 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "plugin 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quad_tree 0.1.0 (git+https://github.com/GreenPix/quad_tree.git)",
  "rand 0.3.14 (registry+https://github.com/rust-lang/crates.io-index)",
  "router 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "rustc-serialize 0.3.18 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -457,7 +458,7 @@ dependencies = [
 
 [[package]]
 name = "nalgebra"
-version = "0.5.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "num 0.1.31 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -579,6 +580,14 @@ version = "1.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "tempdir 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "quad_tree"
+version = "0.1.0"
+source = "git+https://github.com/GreenPix/quad_tree.git#0c2395ec69b066b784e70729c1c81b6b1f7638cf"
+dependencies = [
+ "nalgebra 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
