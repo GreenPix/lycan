@@ -585,7 +585,7 @@ dependencies = [
 [[package]]
 name = "quad_tree"
 version = "0.1.0"
-source = "git+https://github.com/GreenPix/quad_tree.git#0c2395ec69b066b784e70729c1c81b6b1f7638cf"
+source = "git+https://github.com/GreenPix/quad_tree.git#ffbfeb2d08081ebc480b7d86faf54d4be1951ede"
 dependencies = [
  "nalgebra 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
