@@ -2,8 +2,7 @@
 use std::collections::HashMap;
 
 use aariba::rules::RulesEvaluator;
-use aariba::parser;
-use aariba::parser::ParseError;
+use aariba;
 use hyper::error::Error as HyperError;
 
 use behaviour_tree::tree::factory::TreeFactory;
@@ -24,7 +23,7 @@ pub struct AaribaScripts {
 #[derive(Debug)]
 pub enum Error {
     Hyper(HyperError),
-    AaribaParsing(ParseError),
+    AaribaParsing(String),
     BehaviourTreeParsing(String),
 }
 
@@ -34,25 +33,15 @@ impl From<HyperError> for Error {
     }
 }
 
-impl From<ParseError> for Error {
-    fn from(e: ParseError) -> Error {
-        Error::AaribaParsing(e)
-    }
-}
-
-impl From<String> for Error {
-    fn from(e: String) -> Error {
-        Error::BehaviourTreeParsing(e)
-    }
-}
-
 impl AaribaScripts {
     pub fn get_from_url(base_url: &str) -> Result<AaribaScripts,Error> {
         let mut url = String::from(base_url);
         url.push_str("/combat.aariba");
         debug!("Getting file {}", url);
         let script = try!(utils::get_file_from_url(&url));
-        let parsed_script = try!(parser::rules_evaluator(&script));
+        let parsed_script =
+            try!(aariba::parse_rule(&script)
+                .map_err(Error::AaribaParsing));
         let scripts = AaribaScripts {
             combat: parsed_script,
         };
@@ -74,7 +63,9 @@ impl BehaviourTrees {
         let script = try!(utils::get_file_from_url(&url));
         let mut map = HashMap::new();
         let leaves = LeavesCollection::standard();
-        let parsed_trees = try!(behaviour_tree::parse(&script,&leaves));
+        let parsed_trees =
+            try!(behaviour_tree::parse(&script,&leaves)
+                .map_err(Error::BehaviourTreeParsing));
         for tree in parsed_trees {
             let name = String::from(tree.get_name());
             map.insert(name,tree);
