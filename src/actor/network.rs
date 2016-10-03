@@ -112,7 +112,7 @@ impl NetworkActor {
                     error!("Error when unregistering client: {}", e);
                 }
             }
-            Ok(mut messages) => {
+            Ok(messages) => {
                 for message in messages.into_iter() {
                     match message {
                         NetworkCommand::GameCommand(_command) => {

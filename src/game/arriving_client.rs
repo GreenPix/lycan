@@ -60,7 +60,7 @@ impl ArrivingClientManager {
                              hint: EventSet)
     -> Option<(NetworkActor, Id<Player>)> {
         let id;
-        let mut ret;
+        let ret;
         let id_u64 = token.as_usize() as u64;
         match self.clients.get_mut(&id_u64) {
             Some(client) => {
@@ -159,7 +159,7 @@ impl ArrivingClient {
                 self.deregister(event_loop);
                 res.push(ArrivingClientAction::Remove)
             }
-            Ok(mut messages) => {
+            Ok(messages) => {
                 for message in messages.into_iter() {
                     match message {
                         NetworkCommand::GameCommand(
