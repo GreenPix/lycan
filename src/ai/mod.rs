@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use nalgebra::{Vec2,FloatPnt};
+use nalgebra::{Vector2,FloatPoint};
 
 use behaviour_tree::tree::{BehaviourTreeNode};
 use behaviour_tree::tree::{LeafNodeFactory,VisitResult};
@@ -150,7 +150,7 @@ impl <'a,'b> BehaviourTreeNode<Context<'a,'b>> for GetClosestTarget {
         let mut closest_other = None;
         let mut closest_other_sqdistance = self.max_sqdistance;
         for other in others.iter() {
-            let sqdistance = my_position.sqdist(&other.get_position());
+            let sqdistance = my_position.distance_squared(&other.get_position());
             if sqdistance < closest_other_sqdistance {
                 closest_other = Some(other.get_id());
                 closest_other_sqdistance = sqdistance;

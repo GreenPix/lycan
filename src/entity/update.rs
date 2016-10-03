@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use super::{Entity,Order,EntityStore,OthersAccessor};
 use messages::Notification;
 use id::Id;
-use nalgebra::Vec2;
-use nalgebra::Pnt2;
+use nalgebra::Vector2;
+use nalgebra::Point2;
 use aariba::expressions::{Store};
 
 use lycan_serialize::Direction;
@@ -118,13 +118,13 @@ impl Entity {
         // Assume no collisions at the moment ...
         let unitary_speed = if self.walking {
             match self.orientation {
-                Direction::North => Vec2::new(0.0, 1.0),
-                Direction::South => Vec2::new(0.0, -1.0),
-                Direction::East  => Vec2::new(1.0, 0.0),
-                Direction::West  => Vec2::new(-1.0, 0.0),
+                Direction::North => Vector2::new(0.0, 1.0),
+                Direction::South => Vector2::new(0.0, -1.0),
+                Direction::East  => Vector2::new(1.0, 0.0),
+                Direction::West  => Vector2::new(-1.0, 0.0),
             }
         } else {
-            Vec2::new(0.0, 0.0)
+            Vector2::new(0.0, 0.0)
         };
         let speed = unitary_speed * self.stats.speed;
         let new_position = self.position + (speed * *SEC_PER_UPDATE);
