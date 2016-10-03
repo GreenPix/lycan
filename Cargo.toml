@@ -21,24 +21,23 @@ docopt = "0.6"
 nalgebra = "0.5"
 smallvec = "0.1"
 rand = "0.3"
-hyper = "0.8"
+hyper = "0.9"
 bytes = "0.3"
-serde = "0.7"
-serde_json = "0.7"
-uuid = { version = "0.2", features = ["rand","serde"] }
+serde = "0.8"
+serde_json = "0.8"
+uuid = { version = "0.3", features = ["rand","serde"] }
 
 # Iron and related crates
-iron = "0.3"
-mount = "0.1.0"
-router = "*"
-bodyparser = "*"
-plugin = "*"
-modifier = "*"
-iron-error-router = "*"
+iron = "0.4"
+mount = "0.2.0"
+router = "0.4"
+bodyparser = "0.4"
+plugin = "0.2"
+modifier = "0.1"
+iron-error-router = "0.2"
 
 [build-dependencies]
-serde_codegen = "*"
-syntex = "*"
+serde_codegen = "0.8"
 
 [dependencies.lycan-serialize]
 git = "https://github.com/Greenpix/lycan-serialize.git"

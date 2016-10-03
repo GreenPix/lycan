@@ -116,7 +116,9 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
     // TODO: Add middleware at the beginning for authentication of requests
 
     let clone = sender.clone();
-    server.get("/maps", correct_bounds(move |_request| {
+    server.get(
+        "/maps",
+        correct_bounds(move |_request| {
         let maps_inner = define_request!(clone, |game| {
             game.resource_manager.get_all_maps()
         });
@@ -124,88 +126,107 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
                                      .map(|m| GetMaps { uuid: m.get_id(), name: m.name.clone() })
                                      .collect();
         Ok(Response::with((Status::Ok,JsonWriter(maps))))
-    }));
+        }),
+        "maps");
 
     let clone = sender.clone();
-    server.get("/maps/:id/instances", correct_bounds(move |request| {
-        let params = request.extensions.get::<Router>().unwrap();
-        // id is part of the route, the unwrap should never fail
-        let id = &params["id"];
-        let parsed = itry_map!(id.parse::<Uuid>(), |e| (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
-        let instances = define_request!(clone, |game| {
-            get_instances(game, WeakId::new(parsed))
-        });
-        Ok(Response::with((Status::Ok,JsonWriter(instances))))
-    }));
-
-    let clone = sender.clone();
-    server.get("/instances/:id/entities", correct_bounds(move |request| {
-        // id is part of the route, the unwrap should never fail
-        let params = request.extensions.get::<Router>().unwrap();
-        let id = &params["id"];
-        let parsed = itry_map!(id.parse::<u64>(), |e| (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
-        let entities = itry_map!(define_request_instance!(clone, parsed, |instance| {
-            instance.get_entities()
-            }),
-            |_e| (Status::BadRequest, format!("ERROR: Non existent instance id {}", parsed)));
-        Ok(Response::with((Status::Ok,JsonWriter(entities))))
-    }));
-
-    let clone = sender.clone();
-    server.get("/players", correct_bounds(move |_request| {
-        let entities: Vec<_> = define_request!(clone, |game| {
-            game.players.values().cloned().collect()
-        });
-        Ok(Response::with((Status::Ok, JsonWriter(entities))))
-    }));
-
-    let clone = sender.clone();
-    server.post("/instances/:id/spawn", correct_bounds(move |request| {
-        use data::SpawnMonster;
-        let (id_parsed, parsed_monster);
-
-        {
+    server.get(
+        "/maps/:id/instances",
+        correct_bounds(move |request| {
             let params = request.extensions.get::<Router>().unwrap();
             // id is part of the route, the unwrap should never fail
             let id = &params["id"];
-            id_parsed = itry_map!(id.parse::<u64>(), |e|
-                                  (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
-        }
-        {
-            let maybe_monster = itry_map!(request.get::<Struct<SpawnMonster>>(), |e|
-                                          (Status::BadRequest, format!("ERROR: JSON decoding error: {}", e)));
-            parsed_monster = iexpect!(maybe_monster, (Status::BadRequest, "ERROR: No JSON body provided"));
-        }
-        let monster = itry_map!(
-            define_request_instance!(clone, id_parsed, |instance| {
-                instance.spawn_monster(parsed_monster)
+            let parsed = itry_map!(id.parse::<Uuid>(), |e| (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
+            let instances = define_request!(clone, |game| {
+                get_instances(game, WeakId::new(parsed))
+            });
+            Ok(Response::with((Status::Ok,JsonWriter(instances))))
+        }),
+        "instances");
+
+    let clone = sender.clone();
+    server.get(
+        "/instances/:id/entities",
+        correct_bounds(move |request| {
+            // id is part of the route, the unwrap should never fail
+            let params = request.extensions.get::<Router>().unwrap();
+            let id = &params["id"];
+            let parsed = itry_map!(id.parse::<u64>(), |e| (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
+            let entities = itry_map!(define_request_instance!(clone, parsed, |instance| {
+                instance.get_entities()
             }),
-            |_e| (Status::BadRequest, format!("ERROR: Non existent instance id {}", id_parsed)));
-        Ok(Response::with((Status::Ok,JsonWriter(monster))))
-    }));
+            |_e| (Status::BadRequest, format!("ERROR: Non existent instance id {}", parsed)));
+            Ok(Response::with((Status::Ok,JsonWriter(entities))))
+        }),
+        "entities");
 
     let clone = sender.clone();
-    server.post("/shutdown", correct_bounds(move |_request| {
-        define_request!(clone, |g, el| {
-            g.start_shutdown(el);
-        });
-        Ok(Response::with((Status::Ok, "OK")))
-    }));
+    server.get(
+        "/players",
+        correct_bounds(move |_request| {
+            let entities: Vec<_> = define_request!(clone, |game| {
+                game.players.values().cloned().collect()
+            });
+            Ok(Response::with((Status::Ok, JsonWriter(entities))))
+        }),
+        "players");
 
     let clone = sender.clone();
-    server.post("/connect_character", correct_bounds(move |request| {
-        let maybe_params = itry_map!(request.get::<Struct<ConnectCharacterParam>>(), |e|
-                                     (Status::BadRequest, format!("ERROR: JSON decoding error: {}", e)));
-        let decoded = iexpect!(maybe_params, (Status::BadRequest, "ERROR: No JSON body provided"));
-        debug!("Received request to /connect_character: {:?}", decoded);
-        define_request!(clone, |game| {
-            let token = AuthenticationToken(decoded.token);
-            game.connect_character(decoded.id, token);
-        });
-        Ok(Response::with((Status::Ok, "OK")))
-    }));
+    server.post(
+        "/instances/:id/spawn",
+        correct_bounds(move |request| {
+            use data::SpawnMonster;
+            let (id_parsed, parsed_monster);
+
+            {
+                let params = request.extensions.get::<Router>().unwrap();
+                // id is part of the route, the unwrap should never fail
+                let id = &params["id"];
+                id_parsed = itry_map!(id.parse::<u64>(), |e|
+                                      (Status::BadRequest, format!("ERROR: invalid id {}: {}", id, e)));
+            }
+            {
+                let maybe_monster = itry_map!(request.get::<Struct<SpawnMonster>>(), |e|
+                                              (Status::BadRequest, format!("ERROR: JSON decoding error: {}", e)));
+                parsed_monster = iexpect!(maybe_monster, (Status::BadRequest, "ERROR: No JSON body provided"));
+            }
+            let monster = itry_map!(
+                define_request_instance!(clone, id_parsed, |instance| {
+                    instance.spawn_monster(parsed_monster)
+                }),
+                |_e| (Status::BadRequest, format!("ERROR: Non existent instance id {}", id_parsed)));
+            Ok(Response::with((Status::Ok,JsonWriter(monster))))
+        }),
+        "spawn");
 
     let clone = sender.clone();
+    server.post(
+        "/shutdown",
+        correct_bounds(move |_request| {
+            define_request!(clone, |g, el| {
+                g.start_shutdown(el);
+            });
+            Ok(Response::with((Status::Ok, "OK")))
+        }),
+        "shutdown");
+
+    let clone = sender.clone();
+    server.post(
+        "/connect_character",
+        correct_bounds(move |request| {
+            let maybe_params = itry_map!(request.get::<Struct<ConnectCharacterParam>>(), |e|
+                                         (Status::BadRequest, format!("ERROR: JSON decoding error: {}", e)));
+            let decoded = iexpect!(maybe_params, (Status::BadRequest, "ERROR: No JSON body provided"));
+            debug!("Received request to /connect_character: {:?}", decoded);
+            define_request!(clone, |game| {
+                let token = AuthenticationToken(decoded.token);
+                game.connect_character(decoded.id, token);
+            });
+            Ok(Response::with((Status::Ok, "OK")))
+        }),
+        "connect_character");
+
+    // Isolated in a function for easier error handling
     fn entity_delete(sender: &MioSender<LycanRequest>, request: &mut Request) -> Result<(),String> {
         let params = request.extensions.get::<Router>().unwrap();
         // id is part of the route, the unwrap should never fail
@@ -228,12 +249,16 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
             }
         })
     }
-    server.delete("/instances/:instance_id/entities/:entity_id", correct_bounds(move |request| {
-        match entity_delete(&clone, request) {
-            Ok(()) => Ok(Response::with((Status::Ok,"OK"))),
-            Err(s) => Ok(Response::with((Status::BadRequest, s))),
-        }
-    }));
+    let clone = sender.clone();
+    server.delete(
+        "/instances/:instance_id/entities/:entity_id",
+        correct_bounds(move |request| {
+            match entity_delete(&clone, request) {
+                Ok(()) => Ok(Response::with((Status::Ok,"OK"))),
+                Err(s) => Ok(Response::with((Status::BadRequest, s))),
+            }
+        }),
+        "delete_entity");
 
     server
 }
