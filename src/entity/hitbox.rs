@@ -1,4 +1,4 @@
-use nalgebra::Pnt2;
+use nalgebra::Point2;
 
 #[derive(Debug,Clone,Copy)]
 pub struct RectangleHitbox {
@@ -19,7 +19,7 @@ impl RectangleHitbox {
         RectangleHitbox::new(0.75,1.0)
     }
 
-    pub fn collision(&self, pos: Pnt2<f32>, other: &RectangleHitbox, pos_other: Pnt2<f32>) -> bool {
+    pub fn collision(&self, pos: Point2<f32>, other: &RectangleHitbox, pos_other: Point2<f32>) -> bool {
         let left1  = pos.x       - self.half_width;
         let right1 = pos.x       + self.half_width;
         let left2  = pos_other.x - other.half_width;

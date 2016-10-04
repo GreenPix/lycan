@@ -1,5 +1,4 @@
 extern crate serde_codegen;
-extern crate syntex;
 
 use std::env;
 use std::path::Path;
@@ -20,10 +19,7 @@ pub fn main() {
         let dst_dir = dst.parent().unwrap();
         DirBuilder::new().recursive(true).create(dst_dir).unwrap();
 
-        let mut registry = syntex::Registry::new();
-
-        serde_codegen::register(&mut registry);
-        registry.expand("", &src, &dst).unwrap();
+        serde_codegen::expand(&src, &dst).unwrap();
         println!("cargo:rerun-if-changed={}", input_file);
     }
 }

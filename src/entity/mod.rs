@@ -2,7 +2,7 @@ use std::fmt::{self,Formatter};
 use std::cell::{RefCell,RefMut,Ref};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use nalgebra::{Pnt2,Vec2};
+use nalgebra::{Point2,Vector2};
 use rand;
 
 use id::{Id,HasForgeableId,HasId};
@@ -43,16 +43,16 @@ pub struct Entity {
 
     actor: Option<ActorId>,
     e_type: EntityType,
-    position: Pnt2<f32>,
+    position: Point2<f32>,
     // We probably won't save the speed ...
-    speed: Vec2<f32>,
+    speed: Vector2<f32>,
     orientation: Direction,
     skin: u64,
     pv: u64,
     hitbox: RectangleHitbox,
     attack_box: RectangleHitbox,
-    attack_offset_x: Vec2<f32>,
-    attack_offset_y: Vec2<f32>,
+    attack_offset_x: Vector2<f32>,
+    attack_offset_y: Vector2<f32>,
     base_stats: Stats,
     stats: CurrentStats,
 
@@ -67,7 +67,7 @@ lazy_static! {
 
 impl Entity {
     pub fn new(e_type: EntityType,
-               position: Pnt2<f32>,
+               position: Point2<f32>,
                orientation: Direction,
                skin: u64,
                base_stats: Stats,
@@ -80,7 +80,7 @@ impl Entity {
                 actor: None,
                 e_type: e_type,
                 position: position,
-                speed: Vec2::new(0.0,0.0),
+                speed: Vector2::new(0.0,0.0),
                 orientation: orientation,
                 base_stats: base_stats,
                 stats: Default::default(),
@@ -88,8 +88,8 @@ impl Entity {
                 pv: pv,
                 hitbox: RectangleHitbox::new_default(),
                 attack_box: RectangleHitbox::new(0.5, 0.5),
-                attack_offset_x: Vec2::new(0.75, 0.0),
-                attack_offset_y: Vec2::new(0.0, 1.0),
+                attack_offset_x: Vector2::new(0.75, 0.0),
+                attack_offset_y: Vector2::new(0.0, 1.0),
 
                 walking: false,
                 attacking: 0,
@@ -110,7 +110,7 @@ impl Entity {
         self.actor = actor;
     }
 
-    pub fn get_position(&self) -> Pnt2<f32> {
+    pub fn get_position(&self) -> Point2<f32> {
         self.position
     }
 
@@ -221,7 +221,7 @@ impl Entity {
         };
         Entity::new(
             EntityType::Monster(monster),
-            Pnt2::new(x, y),
+            Point2::new(x, y),
             Direction::South,
             skin,
             stats,
@@ -350,7 +350,7 @@ impl From<Player> for Entity {
                 gold: player.gold,
                 guild: player.guild,
             }),
-            Pnt2::new(player.position.x, player.position.y),
+            Point2::new(player.position.x, player.position.y),
             Direction::East,   // TODO
             player.skin,
             player.stats,
