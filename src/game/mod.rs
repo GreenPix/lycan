@@ -1,11 +1,9 @@
-use std::net::{self,SocketAddr};
+use std::net::{self,SocketAddr,Ipv4Addr};
 use std::collections::HashMap;
 use std::thread;
 use std::io;
 use std::boxed::FnBox;
-
-use mio::*;
-use mio::tcp::TcpListener;
+use std::sync::mpsc::{self,Receiver,Sender};
 
 use lycan_serialize::AuthenticationToken;
 
@@ -16,22 +14,18 @@ use id::{Id,HasId,WeakId};
 use data::{Player,Map,EntityManagement,EntityType};
 use data::UNIQUE_MAP;
 use entity::{Entity};
-use messages::{Command,Request,NetworkNotification};
-use network::Message;
+use messages::{Command,Request,Notification};
+use network;
 use scripts::{AaribaScripts,BehaviourTrees};
 
 use self::resource_manager::{Error,ResourceManager};
-use self::arriving_client::ArrivingClientManager;
 
 mod authentication;
 mod resource_manager;
-mod arriving_client;
+//mod arriving_client;
 mod management;
 
 const RESOURCE_MANAGER_THREADS: usize = 2;
-
-const SERVER: Token = Token(0);
-const UDP_SOCKET: Token = Token(1);
 
 #[derive(Debug,Clone)]
 pub struct GameParameters {
@@ -45,9 +39,8 @@ pub struct Game {
     // Keep track of all instances still alive
     instances: HashMap<Id<Instance>, InstanceRef>,
     players: HashMap<Id<Player>, EntityManagement>,
-    server: TcpListener,
     resource_manager: ResourceManager,
-    arriving_clients: ArrivingClientManager,
+    sender: Sender<Request>,
     callbacks: Callbacks,
     shutdown: bool,
 
@@ -58,7 +51,6 @@ pub struct Game {
 
 impl Game {
     fn new(
-        server: TcpListener,
         scripts: AaribaScripts,
         trees: BehaviourTrees,
         sender: Sender<Request>,
@@ -68,9 +60,8 @@ impl Game {
             map_instances: HashMap::new(),
             instances: HashMap::new(),
             players: HashMap::new(),
-            server: server,
+            sender: sender.clone(),
             resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS, sender, base_url),
-            arriving_clients: ArrivingClientManager::new(),
             callbacks: Callbacks::new(),
             shutdown: false,
             scripts: scripts,
@@ -79,47 +70,49 @@ impl Game {
     }
 
     pub fn spawn_game(parameters: GameParameters) -> Result<Sender<Request>,io::Error> {
-        let ip = net::IpAddr::V4(Ipv4Addr::new(0,0,0,0));
-        let addr = SocketAddr::new(ip,parameters.port);
-        let server = try!(TcpListener::bind(&addr));
-
-        // XXX: AN UNWRAP -> to solve when we got time
         let scripts = AaribaScripts::get_from_url(&parameters.configuration_url).unwrap();
         let behaviour_trees = BehaviourTrees::get_from_url(&parameters.configuration_url).unwrap();
 
-        let mut event_loop = try!(EventLoop::new());
-        try!(event_loop.register(&server, SERVER, EventSet::all(), PollOpt::level()));
-        let sender = event_loop.channel();
+        let (sender, rx) = mpsc::channel();
+
+        let ip = net::IpAddr::V4(Ipv4Addr::new(0,0,0,0));
+        let addr = SocketAddr::new(ip,parameters.port);
+        network::start_server(addr, sender.clone());
+
         management::start_management_api(sender.clone());
         let mut game = Game::new(
-            server,
             scripts,
             behaviour_trees,
             sender.clone(),
             parameters.configuration_url.clone(),
             );
 
+        /*
         // XXX: Hacks
         let fake_tokens = authentication::generate_fake_authtok();
         for (tok, id) in fake_tokens {
             game.arriving_clients.new_auth_tok(tok, id);
         }
+        */
         let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
         game.map_instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
         // End hacks
 
         thread::spawn(move || {
+            // This is the "event loop"
             debug!("Started game");
-            event_loop.run(&mut game).unwrap();
+            for request in rx {
+                game.apply(request);
+            }
             debug!("Stopping game");
         });
         Ok(sender)
     }
 
-    fn apply(&mut self, event_loop: &mut EventLoop<Self>, request: Request) {
+    fn apply(&mut self, request: Request) {
         match request {
             Request::Arbitrary(req) => {
-                req.execute(self, event_loop);
+                req.execute(self);
             }
             Request::UnregisteredActor{actor,entities} => {
                 debug!("Unregistered {} {:?}", actor, entities);
@@ -141,13 +134,13 @@ impl Game {
                 state.was_saved = true;
 
                 if self.shutdown && self.instances.is_empty() {
-                    event_loop.shutdown();
+                    unimplemented!();
                 }
             }
             Request::JobFinished(job) => {
                 let callbacks = self.callbacks.get_callbacks(job);
                 for cb in callbacks {
-                    cb.call_box((event_loop, self));
+                    cb.call_box((self,));
                 }
             }
             Request::PlayerUpdate(players) => {
@@ -160,24 +153,30 @@ impl Game {
                     self.players.insert(id, player);
                 }
             }
+            Request::NewClient(client) => {
+                let player_id = Id::forge(client.uuid);
+                // TODO: Generate earlier? (during the connexion, in the network code)
+                let client_id = Id::new();
+                let actor = NetworkActor::new(client_id, client);
+                self.player_ready(actor, player_id);
+            }
         }
     }
 
-    fn start_shutdown(&mut self, event_loop: &mut EventLoop<Self>) {
+    fn start_shutdown(&mut self) {
         self.shutdown = true;
         for (_id, instances) in self.map_instances.drain() {
             for instance in instances.values() {
                 let _ = instance.send(Command::Shutdown);
             }
         }
-        let _ = event_loop.deregister(&self.server);
+        unimplemented!();
         // TODO: Drop self.serve so it does not listen any more
     }
 
     // Spawn a new instance if needed
     fn assign_actor_to_map(
         &mut self,
-        event_loop: &mut EventLoop<Self>,
         map: Id<Map>,
         actor: NetworkActor,
         entities: Vec<Entity>,
@@ -194,7 +193,7 @@ impl Game {
                     None => {
                         // No instance for this map, spawn one
                         let instance = Instance::spawn_instance(
-                            event_loop.channel(),
+                            self.sender.clone(),
                             self.scripts.clone(),
                             self.trees.clone(),
                             map,
@@ -217,18 +216,18 @@ impl Game {
         }
     }
 
-    fn player_ready(&mut self, event_loop: &mut EventLoop<Self>,  mut actor: NetworkActor, id: Id<Player>) {
+    fn player_ready(&mut self, mut actor: NetworkActor, id: Id<Player>) {
         match self.resource_manager.retrieve_player(id) {
             Ok(entity) => {
                 let map = entity.get_map_position().unwrap();
                 actor.register_entity(entity.get_id());
-                let notification = NetworkNotification::this_is_you(entity.get_id().as_u64());
-                actor.queue_message(Message::new(notification));
-                self.assign_actor_to_map(event_loop, map, actor, vec![entity]);
+                let notification = Notification::this_is_you(entity.get_id().as_u64());
+                actor.send_message(notification);
+                self.assign_actor_to_map(map, actor, vec![entity]);
             }
             Err(Error::Processing(job)) => {
-                self.callbacks.add(job, move |event_loop, game| {
-                    game.player_ready(event_loop, actor, id);
+                self.callbacks.add(job, move |game| {
+                    game.player_ready(actor, id);
                 });
             }
             Err(Error::NotFound) => {
@@ -250,47 +249,13 @@ impl Game {
 
     fn connect_character(&mut self, id: Id<Player>, token: AuthenticationToken) {
         debug!("Connecting character {} with token {}", id, token.0);
-        self.arriving_clients.new_auth_tok(token, id);
+        unimplemented!();
+        //self.arriving_clients.new_auth_tok(token, id);
         self.resource_manager.load_player(id);
     }
 }
 
-impl Handler for Game {
-    type Message = Request;
-    type Timeout = usize;
-
-    fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, event: EventSet) {
-        match token {
-            SERVER => {
-                trace!("Called server with event {:?}", event);
-                match self.server.accept() {
-                    Err(e) => {
-                        error!("Unexpected error when accepting connection {}", e);
-                    }
-                    Ok(None) => {
-                        warn!("Unexpected None received when accepting socket");
-                    }
-                    Ok(Some((stream, _address))) => {
-                        self.arriving_clients.new_client(stream, event_loop);
-                    }
-                }
-            }
-            UDP_SOCKET => {
-            }
-            _token => {
-                if let Some((actor, id)) = self.arriving_clients.ready(event_loop, token, event) {
-                    self.player_ready(event_loop, actor, id);
-                }
-            }
-        }
-    }
-
-    fn notify(&mut self, event_loop: &mut EventLoop<Self>, msg: Request) {
-        self.apply(event_loop, msg);
-    }
-}
-
-type Callback = Box<FnBox(&mut EventLoop<Game>, &mut Game) + Send>;
+type Callback = Box<FnBox(&mut Game) + Send>;
 
 struct Callbacks {
     callbacks: HashMap<usize, Vec<Callback>>,
@@ -304,7 +269,7 @@ impl Callbacks {
     }
 
     fn add<F>(&mut self, job: usize, cb: F)
-    where F: FnOnce(&mut EventLoop<Game>, &mut Game) + 'static + Send {
+    where F: FnOnce(&mut Game) + 'static + Send {
         self.add_callback_inner(job, Box::new(cb))
     }
 

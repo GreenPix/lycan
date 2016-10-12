@@ -13,7 +13,6 @@ use std::fmt::{self,Formatter,Debug};
 use std::boxed::FnBox;
 use std::sync::mpsc::Sender;
 
-use mio::{Handler,EventLoop};
 use nalgebra::{Point2,Vector2};
 
 use entity::{Entity};
@@ -22,6 +21,7 @@ use actor::{NetworkActor,ActorId};
 use id::Id;
 use instance::{Instance,ShuttingDownState};
 use data::EntityManagement;
+use network::Client;
 
 mod conversions;
 
@@ -37,7 +37,7 @@ pub enum Command {
 impl Command {
     /// Should only be used for debugging or testing
     pub fn new<T>(closure: T) -> Command
-    where T: FnOnce(&mut Instance, &mut EventLoop<Instance>),
+    where T: FnOnce(&mut Instance),
           T: Send + 'static {
         let command = Arbitrary(Box::new(closure));
         Command::Arbitrary(command)
@@ -45,15 +45,15 @@ impl Command {
 }
 
 
-pub struct Arbitrary<T: Handler>(Box<FnBox(&mut T, &mut EventLoop<T>) + Send>);
+pub struct Arbitrary<T>(Box<FnBox(&mut T) + Send>);
 
-impl <T: Handler> Arbitrary<T> {
-    pub fn execute(self, target: &mut T, event_loop: &mut EventLoop<T>) {
-        self.0.call_box((target,event_loop));
+impl <T> Arbitrary<T> {
+    pub fn execute(self, target: &mut T) {
+        self.0.call_box((target,));
     }
 }
 
-impl <T: Handler> Debug for Arbitrary<T> {
+impl <T> Debug for Arbitrary<T> {
     fn fmt(&self, formatter: &mut Formatter) -> Result<(),fmt::Error> {
         formatter.write_str("[arbitrary debug command]")
     }
@@ -62,6 +62,8 @@ impl <T: Handler> Debug for Arbitrary<T> {
 #[derive(Debug)]
 pub enum Request {
     Arbitrary(Arbitrary<Game>),
+
+    NewClient(Client),
 
     // Responses from Instances
     UnregisteredActor {
@@ -78,7 +80,7 @@ pub enum Request {
 impl Request {
     /// Should only be used for debugging or testing
     pub fn new<T>(closure: T) -> Request
-    where T: FnOnce(&mut Game, &mut EventLoop<Game>) + Send + 'static {
+    where T: FnOnce(&mut Game) + Send + 'static {
         let request = Arbitrary(Box::new(closure));
         Request::Arbitrary(request)
     }

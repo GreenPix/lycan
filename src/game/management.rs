@@ -2,7 +2,6 @@ use std::thread;
 use std::sync::mpsc::{self,Sender};
 use std::error::Error as StdError;
 
-use mio::Sender as MioSender;
 use serde_json::ser::to_vec_pretty;
 use serde::Serialize;
 use uuid::Uuid;
@@ -27,12 +26,37 @@ use entity::Entity;
 use instance::management::*;
 use game::Game;
 
+// XXX FIXME TODO: Remove
+// mio channels were sync, std lib channels are not
+// Iron need them to be sync
+// For now use a mutex
+use std::sync::Arc;
+use std::sync::Mutex;
+struct MutexSender<T>(Arc<Mutex<Sender<T>>>);
+
+impl <T> MutexSender<T> {
+    fn new(t: Sender<T>) -> MutexSender<T> {
+        MutexSender(Arc::new(Mutex::new(t)))
+    }
+    fn send(&self, t: T) -> Result<(),()> {
+        let mut guard = self.0.lock().unwrap();
+        guard.send(t).map_err(|_| ())
+    }
+}
+
+impl <T> Clone for MutexSender<T> {
+    fn clone(&self) -> MutexSender<T> {
+        MutexSender(self.0.clone())
+    }
+}
+
 // TODO
 // - Set correct headers in all responses
 // - Check if correct heahers are set (e.g. Content-Type)
 
-pub fn start_management_api(sender: MioSender<LycanRequest>) {
+pub fn start_management_api(sender: Sender<LycanRequest>) {
     thread::spawn(move || {
+        let sender = MutexSender::new(sender);
         let router = create_router(sender);
         let mut mount = Mount::new();
         mount.mount("/api/v1", router);
@@ -66,31 +90,28 @@ macro_rules! itry_map {
 /// Macro to reduce the boilerplate of creating a channel, create a request, send it to Game and
 /// wait for the response
 macro_rules! define_request {
-    ($sender:ident, |$game:ident, $event_loop:ident| $bl:block) => {{
+    ($sender:ident, |$game:ident| $bl:block) => {{
         let (tx, rx) = mpsc::channel();
-        let request = LycanRequest::new(move |$game, $event_loop| {
+        let request = LycanRequest::new(move |$game| {
             let result = $bl;
             let _ = tx.send(result);
         });
         $sender.send(request).unwrap();
         rx.recv().unwrap()
     }};
-    ($sender:ident, |$game:ident| $bl:block) => {
-        define_request!($sender, |$game, _event_loop| $bl)
-    };
 }
 
 /// Macro to reduce the boilerplate of creating a channel, create a request, send it to Game
 /// Route it to the correct Instance and wait for the response
 macro_rules! define_request_instance {
-    ($sender:ident, $id:ident, |$instance:ident, $event_loop:ident| $bl:block) => {{
+    ($sender:ident, $id:ident, |$instance:ident| $bl:block) => {{
         let (tx, rx) = mpsc::channel();
-        let request = LycanRequest::new(move |g, _el| {
+        let request = LycanRequest::new(move |g| {
             let instance = match g.instances.get(&$id) {
                 Some(i) => i,
                 None => { let _ = tx.send(Err(())); return; }
             };
-            let command = Command::new(move |$instance, $event_loop| {
+            let command = Command::new(move |$instance| {
                 let result = $bl;
                 let _ = tx.send(Ok(result));
             });
@@ -99,9 +120,6 @@ macro_rules! define_request_instance {
         $sender.send(request).unwrap();
         rx.recv().unwrap()
     }};
-    ($sender:ident, $id:ident, |$instance:ident| $bl:block) => {
-        define_request_instance!($sender, $id, |$instance, _event_loop| $bl)
-    };
 }
 
 // The Rust typechecker doesn't seem to get the types of the closures right
@@ -111,7 +129,7 @@ fn correct_bounds<F>(f: F) -> F
 where F: Send + Sync + 'static + Fn(&mut Request) -> IronResult<Response>
 {f}
 
-fn create_router(sender: MioSender<LycanRequest>) -> Router {
+fn create_router(sender: MutexSender<LycanRequest>) -> Router {
     let mut server = Router::new();
     // TODO: Add middleware at the beginning for authentication of requests
 
@@ -203,8 +221,8 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
     server.post(
         "/shutdown",
         correct_bounds(move |_request| {
-            define_request!(clone, |g, el| {
-                g.start_shutdown(el);
+            define_request!(clone, |g| {
+                g.start_shutdown();
             });
             Ok(Response::with((Status::Ok, "OK")))
         }),
@@ -227,7 +245,7 @@ fn create_router(sender: MioSender<LycanRequest>) -> Router {
         "connect_character");
 
     // Isolated in a function for easier error handling
-    fn entity_delete(sender: &MioSender<LycanRequest>, request: &mut Request) -> Result<(),String> {
+    fn entity_delete(sender: &MutexSender<LycanRequest>, request: &mut Request) -> Result<(),String> {
         let params = request.extensions.get::<Router>().unwrap();
         // id is part of the route, the unwrap should never fail
         let instance_id = {

@@ -4,15 +4,15 @@ use std::fmt::{Formatter,Display,Error};
 use std::io;
 use std::mem;
 use std::time::Duration as StdDuration;
+use std::sync::mpsc::{self,Receiver,Sender};
 
-use mio::*;
 use time::{self,Duration,SteadyTime,Tm};
+use schedule_recv;
 
 use id::{Id,HasId};
 use entity::{self,Entity,EntityStore};
 use actor::{NetworkActor,ActorId,AiActor};
 use messages::{self,Command,Notification,Request};
-use network::Message;
 use scripts::{BehaviourTrees,AaribaScripts};
 use data::{Map,Monster};
 
@@ -72,16 +72,11 @@ impl Actors {
         self.internal_actors.remove(&id)
     }
 
-    fn broadcast_notifications<H:Handler>(&mut self,
-                                          event_loop: &mut EventLoop<H>,
-                                          notifications: &[Notification]) {
-        let messages: Vec<_> = notifications.iter().map(|notif| {
-            Message::new(notif.clone().into())
-        }).collect();
-        // TODO: "Diffusion lists" to precise what an actor should see
-        for (_, actor) in self.external_actors.iter_mut() {
-            for message in messages.iter() {
-                actor.send_message(event_loop, message.clone());
+    fn broadcast_notifications(&mut self,
+                               notifications: &[Notification]) {
+        for client in self.external_actors.values_mut() {
+            for notif in notifications {
+                client.send_message(notif.clone());
             }
         }
     }
@@ -121,14 +116,6 @@ impl Actors {
             return true;
         }
         false
-    }
-
-    fn ready<H:Handler>(&mut self, event_loop: &mut EventLoop<H>, token: Token, event: EventSet) {
-        let id_u64 = token.as_usize() as u64;
-        trace!("Called ready {} with event {:?}", id_u64, event);
-        let client = self.external_actors.get_mut(&id_u64)
-            .expect("Called ready but no corresponding client in the hashmap");
-        client.ready(event_loop, event);
     }
 
     // TODO: rewrite correctly
@@ -184,22 +171,49 @@ impl Instance {
                           map_id: Id<Map>,
                           ) -> InstanceRef {
         let mut instance = Instance::new(request, scripts, trees, map_id);
-        let mut config = EventLoopConfig::default();
-        config.timer_tick_ms((instance.refresh_period.num_milliseconds() / 2) as u64);
-        let mut event_loop = EventLoop::configured(config).unwrap();
         let id = instance.get_id();
         let created_at = instance.created_at;
-        let sender = event_loop.channel();
+        let (sender, rx) = mpsc::channel();
         thread::spawn(move || {
-            debug!("Started instance {}", instance.id);
-            event_loop.timeout_ms(InstanceTick::CalculateTick,
-                                  instance.refresh_period.num_milliseconds() as u64)
-                      .unwrap();
-            event_loop.timeout_ms(InstanceTick::UpdatePlayers,
-                                  GAME_PLAYER_REFRESH_PERIOD.num_milliseconds() as u64)
-                      .unwrap();
+            let tick = schedule_recv::periodic(DEFAULT_REFRESH_PERIOD.to_std().unwrap());
+            let players_update = schedule_recv::periodic(GAME_PLAYER_REFRESH_PERIOD.to_std().unwrap());
             instance.last_tick = SteadyTime::now();
-            event_loop.run(&mut instance).unwrap();
+
+            debug!("Started instance {}", instance.id);
+            loop {
+            select! {
+                _ = tick.recv() => {
+                    trace!("Received tick notification");
+                    let current = SteadyTime::now();
+                    let elapsed = current - instance.last_tick;
+                    instance.lag = instance.lag + elapsed;
+                    let mut loop_count = 0;
+                    while instance.lag >= instance.refresh_period {
+                        instance.calculate_tick();
+                        instance.lag = instance.lag - instance.refresh_period;
+                        loop_count += 1;
+                    }
+                    if loop_count != 1 {
+                        debug!("Needed to adjust the tick rate! loop count {}", loop_count);
+                    }
+                    // TODO: Should we check if we should do a few more iterations?
+                    instance.last_tick = current;
+                },
+                _ = players_update.recv() => {
+                    let vec = instance.entities
+                        .iter()
+                        .filter(|e| e.is_player())
+                        .map(|e| e.into_management_representation(instance.id, instance.map_id))
+                        .collect();
+                    instance.request.send(Request::PlayerUpdate(vec)).unwrap();
+                },
+                command = rx.recv() => {
+                    let command = command.unwrap();
+                    println!("Received command {:?}", command);
+                    instance.apply(command);
+                }
+            }
+            }
             debug!("Stopping instance {}", instance.id);
         });
         InstanceRef::new(id, sender, created_at, map_id)
@@ -236,19 +250,19 @@ impl Instance {
         instance
     }
 
-    fn apply(&mut self, event_loop: &mut EventLoop<Self>, command: Command) {
+    fn apply(&mut self, command: Command) {
         match command {
             Command::NewClient(actor,entities) => {
-                self.register_client(event_loop, actor, entities);
+                self.register_client(actor, entities);
             }
             Command::Shutdown => {
-                self.shutdown(Some(event_loop));
+                self.shutdown();
             }
             Command::UnregisterActor(id) => {
-                self.unregister_client(event_loop, id);
+                self.unregister_client(id);
             }
             Command::Arbitrary(command) => {
-                command.execute(self, event_loop);
+                command.execute(self);
             }
             Command::AssignEntity((actor,entity)) => {
                 self.assign_entity_to_actor(actor, entity);
@@ -258,51 +272,34 @@ impl Instance {
 
     fn register_client(
         &mut self,
-        event_loop: &mut EventLoop<Self>,
         mut actor: NetworkActor,
         entities: Vec<Entity>,
         ) {
         let id = actor.get_id();
         trace!("Registering actor {} in instance {}", id, self.id);
-        match actor.register(event_loop) {
-            Ok(_) => {
-                for entity in self.entities.iter() {
-                    let position = entity.get_position();
-                    let skin = entity.get_skin();
-                    let entity_id = entity.get_id().as_u64();
-                    let pv = entity.get_pv();
-                    let notification = Notification::new_entity(entity_id, position, skin, pv);
-                    let message = Message::new(notification.into());
-                    actor.send_message(event_loop, message);
-                }
-                for entity in entities {
-                    let entity_id = entity.get_id().as_u64();
-                    let position = entity.get_position();
-                    let skin = entity.get_skin();
-                    let pv = entity.get_pv();
-                    let notification = Notification::new_entity(entity_id, position, skin, pv);
-                    self.next_notifications.push(notification);
-                    self.entities.push(entity);
-                }
-                self.actors.register_client(actor);
-            }
-            Err(e) => {
-                error!("Failed to register actor {}: {}", id, e);
-            }
+        for entity in self.entities.iter() {
+            let position = entity.get_position();
+            let skin = entity.get_skin();
+            let entity_id = entity.get_id().as_u64();
+            let pv = entity.get_pv();
+            let notification = Notification::new_entity(entity_id, position, skin, pv);
+            actor.send_message(notification);
         }
+        for entity in entities {
+            let entity_id = entity.get_id().as_u64();
+            let position = entity.get_position();
+            let skin = entity.get_skin();
+            let pv = entity.get_pv();
+            let notification = Notification::new_entity(entity_id, position, skin, pv);
+            self.next_notifications.push(notification);
+            self.entities.push(entity);
+        }
+        self.actors.register_client(actor);
     }
 
-    fn unregister_client(&mut self, event_loop: &mut EventLoop<Self>, id: ActorId) {
+    fn unregister_client(&mut self, id: ActorId) {
         match self.actors.unregister_client(id) {
             Some(actor) => {
-                if let Err(e) = actor.deregister(event_loop) {
-                    // Can be normal if the connection was lost
-                    if !actor.is_connected() && e.kind() == io::ErrorKind::NotFound {
-                        trace!("Failed to unregister dropped connection {} (normal operation)", id);
-                    } else {
-                        error!("Error when enregistering actor: {}", e);
-                    }
-                }
                 // TODO: Check first if the actor needs to be sent back to the Game
                 let mut entities = Vec::new();
                 for entity_id in actor.entities_iter() {
@@ -325,17 +322,9 @@ impl Instance {
         }
     }
 
-    fn shutdown(&mut self, mut event_loop: Option<&mut EventLoop<Self>>) {
+    fn shutdown(&mut self) {
         let mut state = ShuttingDownState::new(self.id);
         for (actor_id, actor) in self.actors.drain_external() {
-            // Weird thing ... cannot write Some(ref mut ev) ...
-            match event_loop.take() {
-                Some(ev) => {
-                    let _ = actor.deregister(ev);
-                    event_loop = Some(ev);
-                },
-                None => {}
-            }
             let mut entities = Vec::new();
             for entity_id in actor.entities_iter() {
                 match self.entities.remove(*entity_id) {
@@ -354,29 +343,11 @@ impl Instance {
         let mut request_opt = Some(Request::InstanceShuttingDown(state));
         while let Some(request) = request_opt.take() {
             if let Err(e) = self.request.send(request) {
-                match e {
-                    NotifyError::Io(e) => {
-                        error!("IO Error when sending back state: {}", e);
-                    }
-                    NotifyError::Full(req) => {
-                        ::std::thread::sleep(StdDuration::from_millis(100));
-                        // Retry
-                        request_opt = Some(req);
-                    }
-                    NotifyError::Closed(Some(state2)) => {
-                        // TODO: Something to do with the state we got back?
-                        error!("The Game instance has hung up!");
-                    }
-                    NotifyError::Closed(None) => {
-                        error!("The Game instance has hung up!");
-                    }
-                }
+                // TODO: Something to do with the state we got back?
+                error!("The Game instance has hung up!");
             }
         }
         self.shutting_down = true;
-        event_loop.map(|e| e.shutdown());
-
-        // TODO: The event loop will not exit immediately ... we should handle that
     }
 
     fn assign_entity_to_actor(&mut self, id: ActorId, mut entity: Entity) {
@@ -403,7 +374,7 @@ impl Instance {
         self.id
     }
 
-    fn calculate_tick(&mut self, event_loop: &mut EventLoop<Self>) {
+    fn calculate_tick(&mut self) {
         trace!("Instance {}: Calculating tick\n{}", self.id, self);
         self.actors.execute_orders(&mut self.entities,
                                    &mut self.next_notifications,
@@ -413,9 +384,9 @@ impl Instance {
 
         let commands_buffer = self.actors.get_commands();
         for command in commands_buffer {
-            self.apply(event_loop, command);
+            self.apply(command);
         }
-        self.actors.broadcast_notifications(event_loop, &self.next_notifications);
+        self.actors.broadcast_notifications(&self.next_notifications);
         debug!("Notifications: {:?}", self.next_notifications);
         self.prev_notifications.clear();
         mem::swap(&mut self.prev_notifications, &mut self.next_notifications);
@@ -434,19 +405,7 @@ impl Instance {
     }
 }
 
-impl Handler for Instance {
-    type Timeout = InstanceTick;
-    type Message = Command;
-
-    fn ready(&mut self, event_loop: &mut EventLoop<Self>, token: Token, event: EventSet) {
-        self.actors.ready(event_loop, token, event);
-    }
-
-    fn notify(&mut self, event_loop: &mut EventLoop<Self>, msg: Command) {
-        debug!("Received command {:?}", msg);
-        self.apply(event_loop, msg);
-    }
-
+/*
     fn timeout(&mut self, event_loop: &mut EventLoop<Self>, action: InstanceTick) {
         match action {
             InstanceTick::CalculateTick => {
@@ -474,12 +433,7 @@ impl Handler for Instance {
             }
         }
     }
-
-    fn interrupted(&mut self, _event_loop: &mut EventLoop<Self>) {
-        error!("Interrupted");
-    }
-}
-
+*/
 #[derive(Clone)]
 pub struct InstanceRef {
     id: Id<Instance>,
@@ -501,8 +455,9 @@ impl InstanceRef {
         }
     }
 
-    pub fn send(&self, command: Command) -> Result<(),NotifyError<Command>> {
-        self.sender.send(command)
+    pub fn send(&self, command: Command) -> Result<(),()> {
+        // TODO: handle errors?
+        self.sender.send(command).map_err(|_| ())
     }
 
     pub fn get_id(&self) -> Id<Instance> {
@@ -577,7 +532,7 @@ impl Drop for Instance {
     fn drop(&mut self) {
         if !self.shutting_down {
             error!("Instance {} has not been shutdown properly", self.id);
-            self.shutdown(None);
+            self.shutdown();
         }
     }
 }

@@ -9,8 +9,6 @@ use lycan_serialize::Vec2d;
 use std::fmt::{self,Formatter,Debug};
 use std::boxed::FnBox;
 
-use mio::{Handler,EventLoop};
-
 use entity::{Entity};
 use game::Game;
 use id::Id;

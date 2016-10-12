@@ -6,7 +6,6 @@ use std::ops::Deref;
 use std::borrow::Borrow;
 use std::collections::HashSet;
 
-use mio::Token;
 use rustc_serialize::{Encodable,Encoder,Decodable,Decoder};
 use serde::de::{self,Deserialize,Deserializer,Visitor};
 use serde::ser::{Serialize,Serializer};
@@ -33,10 +32,6 @@ impl<T: HasId<Type=u64>> Id<T> {
     /// seen before.
     pub fn new() -> Id<T> {
         Id{inner: WeakId::new(NEXT_ID.fetch_add(1, Ordering::Relaxed) as u64)}
-    }
-
-    pub fn as_token(self) -> Token {
-        Token(self.inner.id as usize)
     }
 
     pub fn as_u64(self) -> u64 {
