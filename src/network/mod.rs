@@ -39,11 +39,13 @@ use uuid::Uuid;
 
 use lycan_serialize::ErrorCode;
 use lycan_serialize::Vec2d;
-use messages::{NetworkCommand,Command,NetworkGameCommand,GameCommand};
+use lycan_serialize::Error as NetworkError;
 use lycan_serialize::AuthenticationToken;
+
+use id::Id;
+use messages::{NetworkCommand,Command,NetworkGameCommand,GameCommand};
 use messages::NetworkNotification;
 use messages::Request;
-use lycan_serialize::Error as NetworkError;
 
 use self::buffered_tcp::BufferedReader;
 use self::buffered_tcp::IoRef;
@@ -115,8 +117,8 @@ fn handle_client(socket: TcpStream, handle: &Handle, tx: StdSender<Request>) {
             Ok(command)
         });
 
-        let fut = authenticate_client(messages, write)
-            .and_then(|(messages, write, uuid)| {
+        let fut = authenticate_client(messages, write, tx)
+            .and_then(|(messages, write, uuid, tx)| {
                 debug!("Authenticated the client {}", uuid);
                 client_connected(messages, write, uuid, handle_clone, tx)
             }).map_err(|e| error!("Error in handle_client {}", e));
@@ -167,7 +169,10 @@ where S: Stream<Item=NetworkCommand,Error=String> + Send + 'static,
 }
 
 // XXX: We shouldn't need to box the future
-fn authenticate_client<S,W>(messages: S, write: W) -> BoxFuture<(S,W,Uuid), String>
+fn authenticate_client<S,W>(messages: S,
+                            write: W,
+                            tx: StdSender<Request>)
+    -> BoxFuture<(S,W,Uuid,StdSender<Request>), String>
 where S: Stream<Item=NetworkCommand,Error=String> + Send + 'static,
       W: Write + Send + 'static {
     let fut = messages.into_future().map_err(move |(error, _messages)| {
@@ -183,7 +188,7 @@ where S: Stream<Item=NetworkCommand,Error=String> + Send + 'static,
             None => Err("Client sent no message".to_string()),
         }
     }).and_then(move |(messages, uuid, token)| {
-        verify_token(uuid, token).and_then(move |success| {
+        verify_token(uuid, token, tx).and_then(move |(success, tx)| {
             debug!("Authentication result: {}", success);
             if !success {
                 let response = NetworkNotification::Response{ code: ErrorCode::Error };
@@ -194,7 +199,7 @@ where S: Stream<Item=NetworkCommand,Error=String> + Send + 'static,
             } else {
                 let response = NetworkNotification::Response{ code: ErrorCode::Success };
                 serialize_future(response, write)
-                    .and_then(move |write| futures::finished((messages, write, uuid)))
+                    .map(move |write| (messages, write, uuid, tx))
                     .boxed()
             }
         })
@@ -235,37 +240,21 @@ fn next_message<T: Io>(socket: BufferedReader<T>)
     future
 }
 
-fn verify_token(_uuid: Uuid, _token: AuthenticationToken) -> impl Future<Item=bool,Error=String> {
+fn verify_token(uuid: Uuid,
+                token: AuthenticationToken,
+                tx: StdSender<Request>)
+    -> impl Future<Item=(bool,StdSender<Request>),Error=String> {
     // Simulates a delay in the authentication ...
     let (complete, oneshot) = futures::oneshot();
-    thread::spawn(move || {
-        let duration = std::time::Duration::from_millis(100);
-        thread::sleep(duration);
-        complete.complete(true);
+    let request = Request::new(move |game| {
+        complete.complete(game.verify_token(Id::forge(uuid), token));
     });
+    tx.send(request).unwrap();
 
-    oneshot.map_err(|_| "Verify token cancelled".to_string())
+    oneshot
+        .map(|res| (res, tx))
+        .map_err(|_| "Verify token cancelled".to_string())
 }
-
-/*
-#[derive(Clone,Debug)]
-pub struct Message {
-    inner: Cursor<Vec<u8>>,
-    size: u64,
-}
-
-impl Message {
-    pub fn new(data: NetworkNotification) -> Message {
-        let mut vec = Vec::new();
-        data.serialize(&mut vec).unwrap();
-        let size = vec.len() as u64;
-        Message {
-            inner: Cursor::new(vec),
-            size: size,
-        }
-    }
-}
-*/
 
 #[derive(Debug)]
 pub enum ClientError {

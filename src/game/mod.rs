@@ -19,6 +19,7 @@ use network;
 use scripts::{AaribaScripts,BehaviourTrees};
 
 use self::resource_manager::{Error,ResourceManager};
+use self::authentication::AuthenticationManager;
 
 mod authentication;
 mod resource_manager;
@@ -40,6 +41,7 @@ pub struct Game {
     instances: HashMap<Id<Instance>, InstanceRef>,
     players: HashMap<Id<Player>, EntityManagement>,
     resource_manager: ResourceManager,
+    authentication_manager: AuthenticationManager,
     sender: Sender<Request>,
     callbacks: Callbacks,
     shutdown: bool,
@@ -61,6 +63,7 @@ impl Game {
             instances: HashMap::new(),
             players: HashMap::new(),
             sender: sender.clone(),
+            authentication_manager: AuthenticationManager::new(),
             resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS, sender, base_url),
             callbacks: Callbacks::new(),
             shutdown: false,
@@ -87,13 +90,8 @@ impl Game {
             parameters.configuration_url.clone(),
             );
 
-        /*
         // XXX: Hacks
-        let fake_tokens = authentication::generate_fake_authtok();
-        for (tok, id) in fake_tokens {
-            game.arriving_clients.new_auth_tok(tok, id);
-        }
-        */
+        game.authentication_manager.fake_authentication_tokens();
         let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
         game.map_instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
         // End hacks
@@ -248,10 +246,12 @@ impl Game {
     }
 
     fn connect_character(&mut self, id: Id<Player>, token: AuthenticationToken) {
-        debug!("Connecting character {} with token {}", id, token.0);
-        unimplemented!();
-        //self.arriving_clients.new_auth_tok(token, id);
+        self.authentication_manager.add_token(id, token);
         self.resource_manager.load_player(id);
+    }
+
+    pub fn verify_token(&mut self, id: Id<Player>, token: AuthenticationToken) -> bool {
+        self.authentication_manager.verify_token(id, token)
     }
 }
 
