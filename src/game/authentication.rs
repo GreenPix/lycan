@@ -20,7 +20,7 @@ impl AuthenticationManager {
     }
 
     pub fn add_token(&mut self, player: Id<Player>, token: AuthenticationToken) {
-        info!("Adding token {} for player {}", token.0, player);
+        trace!("Adding token {} for player {}", token.0, player);
         self.map.insert(player, token);
     }
 
@@ -31,15 +31,15 @@ impl AuthenticationManager {
         match self.map.remove(&player) {
             Some(t) => {
                 if t == token {
-                    info!("Authentication success for player {}", player);
+                    trace!("Authentication success for player {}", player);
                     true
                 } else {
-                    info!("Authentication failure for player {}: invalid token", player);
+                    trace!("Authentication failure for player {}: invalid token", player);
                     false
                 }
             }
             None => {
-                info!("Authentication failure for player {}: no associated token", player);
+                trace!("Authentication failure for player {}: no associated token", player);
                 false
             }
         }

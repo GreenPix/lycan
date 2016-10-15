@@ -98,7 +98,10 @@ impl ::std::fmt::Debug for Client {
 }
 
 pub fn start_server(addr: SocketAddr, tx: StdSender<Request>) {
-    thread::spawn(move || {
+    let builder = thread::Builder::new()
+        .name("Network Tokio".into());
+
+    builder.spawn(move || {
         // Create the event loop that will drive this server
         let mut l = Core::new().unwrap();
         let handle = l.handle();
@@ -117,15 +120,26 @@ pub fn start_server(addr: SocketAddr, tx: StdSender<Request>) {
 
         // Execute our server (modeled as a future) and wait for it to
         // complete.
+        //
+        // There are currently no clean way to stop the event loop, so this
+        // function currently never returns
         l.run(done).unwrap();
     });
 }
 
+// Handles an incomming client on the network
+//
+// It will spawn a task on the even look associated with `handle`, that will drive
+// all the network part for this client
 fn handle_client(socket: TcpStream, handle: &Handle, tx: StdSender<Request>) {
     let handle_clone = handle.clone();
     let fut = IoRef::new(socket).and_then(|socket| {
+        // Split the socket into two parts
+        // The write part is unbuffered, the read part is
         let write = socket.clone();
         let read = BufferedReader::new(socket);
+
+        // Converts the read part of the socket to an asynchronous stream of network commands
         let messages = stream_adapter::new_adapter(|read| {
             Some(next_message(read))
         }, read)
@@ -135,18 +149,25 @@ fn handle_client(socket: TcpStream, handle: &Handle, tx: StdSender<Request>) {
             Ok(command)
         });
 
+        // First authenticate the client
         let fut = authenticate_client(messages, write, tx)
             .and_then(|(messages, write, uuid, tx)| {
                 debug!("Authenticated the client {}", uuid);
+                // The connect it to the Game
                 client_connected(messages, write, uuid, handle_clone, tx)
             }).map_err(|e| error!("Error in handle_client {}", e));
 
         fut
     });
 
+    // Finally, spawn the resulting future, so it can run in parallel of other futures
     handle.spawn(fut);
 }
 
+// Establishes communication between a client and the Game
+//
+// The returned future currently only resolves with an error, either when a communication
+// problem with the client occured, or when the client disconnects
 fn client_connected<S,W>(messages: S,
                          write: W,
                          uuid: Uuid,
@@ -188,9 +209,13 @@ where S: Stream<Item=NetworkCommand,Error=String> + Send + 'static,
             res.into_future().flatten()
         }).map(|_| ());
 
+    // We run the two futures in parallel
+    // XXX: This introduces potentially unwanted polling:
+    // every time one of fut1 or fut2 is ready, both will be polled
     let fut = fut1.join(fut2).map(|_| ())
       .map_err(|e| format!("Error: {}", e));
 
+    // Creates the corresponding Client structure, and send it to the Game
     let client = Client {
         uuid: uuid,
         sender: tx2,
@@ -206,12 +231,18 @@ where S: Stream<Item=NetworkCommand,Error=String> + Send + 'static,
 }
 
 // XXX: We shouldn't need to box the future
+// Deals with client authentication
+//
+// The returned future resolved to the streams given in input, plus the Uuid of the authenticated
+// player
 fn authenticate_client<S,W>(messages: S,
                             write: W,
                             tx: StdSender<Request>)
     -> BoxFuture<(S,W,Uuid,StdSender<Request>), String>
 where S: Stream<Item=NetworkCommand,Error=String> + Send + 'static,
       W: Write + Send + 'static {
+    // This into_future() transforms the stream of message in a future that will resolve
+    // to one message, and the rest of messages
     let fut = messages.into_future().map_err(move |(error, _messages)| {
         // TODO: This brutally drops the client ...
         error
@@ -219,32 +250,35 @@ where S: Stream<Item=NetworkCommand,Error=String> + Send + 'static,
         match command {
             Some(NetworkCommand::GameCommand(NetworkGameCommand::Authenticate(uuid, token))) => {
                 debug!("Got authentication request {} {:?}", uuid, token);
-                Ok((messages, uuid, token))
+
+                 let verif = verify_token(uuid, token, tx).and_then(move |(success, tx)| {
+                    debug!("Authentication result: {}", success);
+                    let response = if success {
+                        NetworkNotification::Response { code: ErrorCode::Success }
+                    } else {
+                        NetworkNotification::Response { code: ErrorCode::Error }
+                    };
+                    serialize_future(response, write).and_then(move |write| {
+                        if success {
+                            Ok((messages, write, uuid, tx))
+                        } else {
+                            Err("Failed authentication".to_string())
+                        }
+                    })
+                });
+                 Ok(verif)
             }
             Some(_) => Err("Client tried to send a message before authenticating".to_string()),
             None => Err("Client sent no message".to_string()),
         }
-    }).and_then(move |(messages, uuid, token)| {
-        verify_token(uuid, token, tx).and_then(move |(success, tx)| {
-            debug!("Authentication result: {}", success);
-            if !success {
-                let response = NetworkNotification::Response{ code: ErrorCode::Error };
-                serialize_future(response, write)
-                    .and_then(move |_write| {
-                        Err("Failed authentication".to_string())
-                    }).boxed()
-            } else {
-                let response = NetworkNotification::Response{ code: ErrorCode::Success };
-                serialize_future(response, write)
-                    .map(move |write| (messages, write, uuid, tx))
-                    .boxed()
-            }
-        })
     });
-    fut.boxed()
+    fut.flatten().boxed()
 }
 
 // TODO: unbox
+// Serializes a notification, and sends it on the network
+//
+// The returned future will resolve to the stream
 fn serialize_future<W: Write + Send + 'static>(notif: NetworkNotification, writer: W) -> BoxFuture<W,String> {
     // TODO: Improve that ...
     let mut buffer = Vec::with_capacity(128);
@@ -255,6 +289,9 @@ fn serialize_future<W: Write + Send + 'static>(notif: NetworkNotification, write
         .boxed()
 }
 
+// Reads the next message on the network
+//
+// The returned future will resolve to the socket given in input, plus the deserialized command
 fn next_message<T: Io>(socket: BufferedReader<T>)
 -> impl Future<Item=(BufferedReader<T>, NetworkCommand),Error=String> {
     let future = socket.ensure(8)
@@ -277,6 +314,7 @@ fn next_message<T: Io>(socket: BufferedReader<T>)
     future
 }
 
+// Verifies an authentication token, returns true if the authentication was successful
 fn verify_token(uuid: Uuid,
                 token: AuthenticationToken,
                 tx: StdSender<Request>)

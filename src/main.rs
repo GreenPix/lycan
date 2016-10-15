@@ -30,7 +30,7 @@ fn main() {
         .and_then(|d| d.decode())
         .unwrap_or_else(|e| e.exit());
     if std::env::var_os("RUST_LOG").is_none() {
-        std::env::set_var("RUST_LOG", "debug,mio=error");
+        std::env::set_var("RUST_LOG", "warn,lycan=debug");
     }
     env_logger::init().unwrap();
     let parameters = GameParameters {
