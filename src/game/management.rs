@@ -39,7 +39,7 @@ impl <T> MutexSender<T> {
         MutexSender(Arc::new(Mutex::new(t)))
     }
     fn send(&self, t: T) -> Result<(),()> {
-        let mut guard = self.0.lock().unwrap();
+        let guard = self.0.lock().unwrap();
         guard.send(t).map_err(|_| ())
     }
 }

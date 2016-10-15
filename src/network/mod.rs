@@ -124,7 +124,7 @@ pub fn start_server(addr: SocketAddr, tx: StdSender<Request>) {
         // There are currently no clean way to stop the event loop, so this
         // function currently never returns
         l.run(done).unwrap();
-    });
+    }).unwrap();
 }
 
 // Handles an incomming client on the network

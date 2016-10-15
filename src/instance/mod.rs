@@ -346,12 +346,9 @@ impl Instance {
             state.push(actor, entities);
         }
 
-        let mut request_opt = Some(Request::InstanceShuttingDown(state));
-        while let Some(request) = request_opt.take() {
-            if let Err(e) = self.request.send(request) {
-                // TODO: Something to do with the state we got back?
-                error!("The Game instance has hung up!");
-            }
+        if let Err(e) = self.request.send(Request::InstanceShuttingDown(state)) {
+            // TODO: Something to do with the state we got back?
+            error!("The Game instance has hung up!\n{:#?}", e);
         }
         self.shutting_down = true;
     }
