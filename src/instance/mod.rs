@@ -407,35 +407,6 @@ impl Instance {
     }
 }
 
-/*
-    fn timeout(&mut self, event_loop: &mut EventLoop<Self>, action: InstanceTick) {
-        match action {
-            InstanceTick::CalculateTick => {
-                let current = SteadyTime::now();
-                let elapsed = current - self.last_tick;
-                self.lag = self.lag + elapsed;
-                while self.lag >= self.refresh_period {
-                    self.calculate_tick(event_loop);
-                    self.lag = self.lag - self.refresh_period;
-                }
-                // TODO: Should we check if we should do a few more iterations?
-                self.last_tick = current;
-                let sleep = (self.refresh_period - self.lag).num_milliseconds() as u64;
-                event_loop.timeout_ms(InstanceTick::CalculateTick, sleep).unwrap();
-            }
-            InstanceTick::UpdatePlayers => {
-                let vec = self.entities
-                    .iter()
-                    .filter(|e| e.is_player())
-                    .map(|e| e.into_management_representation(self.id, self.map_id))
-                    .collect();
-                self.request.send(Request::PlayerUpdate(vec)).unwrap();
-                let sleep = GAME_PLAYER_REFRESH_PERIOD.num_milliseconds() as u64;
-                event_loop.timeout_ms(InstanceTick::UpdatePlayers, sleep).unwrap();
-            }
-        }
-    }
-*/
 #[derive(Clone)]
 pub struct InstanceRef {
     id: Id<Instance>,
