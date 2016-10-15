@@ -35,6 +35,8 @@ impl AuthenticationManager {
                     true
                 } else {
                     trace!("Authentication failure for player {}: invalid token", player);
+                    // XXX: Is there a more efficient way than removing and re-adding?
+                    self.map.insert(player, t);
                     false
                 }
             }
