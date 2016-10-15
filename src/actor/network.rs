@@ -58,8 +58,9 @@ impl NetworkActor {
                     self.commands.orders.push(order);
                 }
                 Ok(Some(NetworkCommand::GameCommand(c))) => {
-                    // TODO
-                    unimplemented!();
+                    error!("Error: the client is not supposed to send GameCommands after authentication {:?}", c);
+                    self.commands.push(Command::UnregisterActor(self.id));
+                    break;
                 }
                 Ok(None) => break,
                 Err(()) => {
