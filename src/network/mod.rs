@@ -140,8 +140,11 @@ fn handle_client(socket: TcpStream, handle: &Handle, tx: StdSender<Request>) {
         let read = BufferedReader::new(socket);
 
         // Converts the read part of the socket to an asynchronous stream of network commands
-        let messages = stream_adapter::new_adapter(read, |read| {
-            Some(next_message(read))
+        let messages = stream_adapter::repeat(read, |read| {
+            // XXX: This .boxed() is to avoid an ICE
+            // See https://github.com/rust-lang/rust/issues/37096
+            // https://github.com/rust-lang/rust/pull/37111
+            Some(next_message(read).boxed())
         })
         .and_then(|command| {
             // Log every command we receive

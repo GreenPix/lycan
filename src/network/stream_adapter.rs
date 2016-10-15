@@ -1,120 +1,99 @@
-// TODO: Try to contribute back to Futures?
-use std::marker::PhantomData;
+//! TODO: This module is being contributed back to futures-rs
+use std::mem;
 
-use futures::Future;
-use futures::IntoFuture;
-use futures::Async;
-use futures::Poll;
+use futures::{Future, IntoFuture, Async, Poll};
 use futures::stream::Stream;
 
-/// Converts a closure generating a future into a `futures::stream::Stream`
+/// Converts a closure generating a future into a Stream
 ///
 /// This adapter will continuously use a provided generator to generate a future, then wait
 /// for its completion and output its result.
 ///
 /// The generator is given a state in input, and must output a structure implementing
-/// `IntoFuture`. The future must resolve to both a new state, and a value.
+/// `IntoFuture`. The future must resolve to a tuple containing a new state, and a value.
 /// The value will be returned by the stream, and the new state will be given to the generator
 /// to create a new future.
-///
-/// One use-case of the state is to pass ownership of objects that cannot be cloned, or expensive
-/// to clone (such as buffers or sockets)
 ///
 /// The initial state is provided to this method
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// // Define those structures / functions somewhere
-/// struct Message { ... }
-/// struct Error { ... }
-/// fn parse_message<T: Read>(reader: T) -> BoxFuture<(T,Message),Error> { ... }
-/// fn process_message(message: Message) { ... }
+/// ```rust
+/// use futures::*;
+/// use futures::stream::Stream;
 ///
-/// fn client_connected<T: Read>(reader: T) {
-///     let adapter = new_adapter(reader, |reader| {
-///         parse_message(reader)
-///     });
-///
-///     adapter.for_each(|message| {
-///         println!("Received new message");
-///         process_message(message)
-///     })
-/// }
+/// let mut stream = stream::repeat(0, |state| {
+///     if state <= 2 {
+///         let fut: Result<_,()> = Ok((state+1, state*2));
+///         Some(fut)
+///     } else {
+///         None
+///     }
+/// });
+/// assert_eq!(Ok(Async::Ready(Some(0))), stream.poll());
+/// assert_eq!(Ok(Async::Ready(Some(2))), stream.poll());
+/// assert_eq!(Ok(Async::Ready(Some(4))), stream.poll());
+/// assert_eq!(Ok(Async::Ready(None)), stream.poll());
 /// ```
-pub fn new_adapter<S, G: Generator<S>>(init: S, mut gen: G) -> Adapter<S,G> {
-    let future = gen.create(init).map(|f| f.into_future());
-    Adapter {
-        gen: gen,
-        current_future: future,
-        _phantom: PhantomData,
+pub fn repeat<T, F, Fut, It>(init: T, f: F) -> Repeat<T, F, Fut>
+where F: FnMut(T) -> Option<Fut>,
+      Fut: IntoFuture<Item = (T,It)> {
+    Repeat {
+        f: f,
+        state: State::Ready(init),
     }
 }
 
-/// Structure created by the `new_adapter()` method
-pub struct Adapter<S, G: Generator<S>> {
-    gen: G,
-    current_future: Option<<<G as Generator<S>>::Output as IntoFuture>::Future>,
-    _phantom: PhantomData<S>,
+/// A stream which creates futures, polls them and return their result
+///
+/// This stream is returned by the `futures::stream::repeat` method
+#[must_use = "streams do nothing unless polled"]
+pub struct Repeat<T, F, Fut> where Fut: IntoFuture {
+    f: F,
+    state: State<T, Fut::Future>,
 }
 
-impl <S, G: Generator<S>> Stream for Adapter<S,G> {
-    type Item = <<G as Generator<S>>::Item as Split>::Right;
-    type Error = <<G as Generator<S>>::Output as IntoFuture>::Error;
+impl <T, F, Fut, It> Stream for Repeat<T, F, Fut>
+where F: FnMut(T) -> Option<Fut>,
+      Fut: IntoFuture<Item = (T,It)> {
+    type Item = It;
+    type Error = Fut::Error;
 
-    fn poll(&mut self) -> Poll<Option<Self::Item>, Self::Error> {
-        match self.current_future.take() {
-            Some(mut fut) => {
-                match fut.poll() {
-                    Ok(Async:: Ready(t)) => {
-                        let (state, item) = t.split();
-                        self.current_future = self.gen.create(state).map(|f| f.into_future());
-                        Ok(Async::Ready(Some(item)))
+    fn poll(&mut self) -> Poll<Option<It>, Fut::Error> {
+        loop {
+            match mem::replace(&mut self.state, State::Empty) {
+                State::Empty => panic!("cannot poll Repeat twice"),
+                State::Ready(state) => {
+                    match (self.f)(state) {
+                        Some(fut) => { self.state = State::Processing(fut.into_future()); }
+                        None => { return Ok(Async::Ready(None)); }
                     }
-                    Ok(Async::NotReady) => {
-                        self.current_future = Some(fut);
-                        Ok(Async::NotReady)
-                    }
-                    Err(e) => Err(e),
                 }
-            }
-            None => {
-                return Ok(Async::Ready(None));
+                State::Processing(mut fut) => {
+                    match try!(fut.poll()) {
+                        Async:: Ready((state, item)) => {
+                            self.state = State::Ready(state);
+                            return Ok(Async::Ready(Some(item)));
+                        }
+                        Async::NotReady => {
+                            self.state = State::Processing(fut);
+                            return Ok(Async::NotReady);
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-pub trait Generator<S> {
-    type Item: Split<Left=S>;
-    type Output: IntoFuture<Item=Self::Item>;
+enum State<T, F> where F: Future {
+    /// Placeholder state when doing work
+    Empty,
 
-    fn create(&mut self, init: S) -> Option<Self::Output>;
+    /// Ready to generate new future; current internal state is the `T`
+    Ready(T),
+
+    /// Working on a future generated previously
+    Processing(F),
 }
-
-pub trait Split {
-    type Left;
-    type Right;
-
-    fn split(self) -> (Self::Left, Self::Right);
-}
-
-impl <U,V> Split for (U,V) {
-    type Left = U;
-    type Right = V;
-
-    fn split(self) -> (U, V) { self }
-}
-
-impl <T, It, S, O> Generator<S> for T
-where T: FnMut(S) -> Option<O>,
-      O: IntoFuture<Item=It>,
-      It: Split<Left=S> {
-          type Item = It;
-          type Output = O;
-
-          fn create(&mut self, init: S) -> Option<Self::Output> {
-              self(init)
-          }
-      }
 
