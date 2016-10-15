@@ -7,7 +7,42 @@ use futures::Async;
 use futures::Poll;
 use futures::stream::Stream;
 
-pub fn new_adapter<S, G: Generator<S>>(mut gen: G, init: S) -> Adapter<S,G> {
+/// Converts a closure generating a future into a `futures::stream::Stream`
+///
+/// This adapter will continuously use a provided generator to generate a future, then wait
+/// for its completion and output its result.
+///
+/// The generator is given a state in input, and must output a structure implementing
+/// `IntoFuture`. The future must resolve to both a new state, and a value.
+/// The value will be returned by the stream, and the new state will be given to the generator
+/// to create a new future.
+///
+/// One use-case of the state is to pass ownership of objects that cannot be cloned, or expensive
+/// to clone (such as buffers or sockets)
+///
+/// The initial state is provided to this method
+///
+/// # Example
+///
+/// ```rust,ignore
+/// // Define those structures / functions somewhere
+/// struct Message { ... }
+/// struct Error { ... }
+/// fn parse_message<T: Read>(reader: T) -> BoxFuture<(T,Message),Error> { ... }
+/// fn process_message(message: Message) { ... }
+///
+/// fn client_connected<T: Read>(reader: T) {
+///     let adapter = new_adapter(reader, |reader| {
+///         parse_message(reader)
+///     });
+///
+///     adapter.for_each(|message| {
+///         println!("Received new message");
+///         process_message(message)
+///     })
+/// }
+/// ```
+pub fn new_adapter<S, G: Generator<S>>(init: S, mut gen: G) -> Adapter<S,G> {
     let future = gen.create(init).map(|f| f.into_future());
     Adapter {
         gen: gen,
@@ -16,6 +51,7 @@ pub fn new_adapter<S, G: Generator<S>>(mut gen: G, init: S) -> Adapter<S,G> {
     }
 }
 
+/// Structure created by the `new_adapter()` method
 pub struct Adapter<S, G: Generator<S>> {
     gen: G,
     current_future: Option<<<G as Generator<S>>::Output as IntoFuture>::Future>,

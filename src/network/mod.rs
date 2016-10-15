@@ -140,9 +140,9 @@ fn handle_client(socket: TcpStream, handle: &Handle, tx: StdSender<Request>) {
         let read = BufferedReader::new(socket);
 
         // Converts the read part of the socket to an asynchronous stream of network commands
-        let messages = stream_adapter::new_adapter(|read| {
+        let messages = stream_adapter::new_adapter(read, |read| {
             Some(next_message(read))
-        }, read)
+        })
         .and_then(|command| {
             // Log every command we receive
             trace!("Received command {:?}", command);
