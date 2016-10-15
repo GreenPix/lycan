@@ -181,38 +181,40 @@ impl Instance {
 
             debug!("Started instance {}", instance.id);
             loop {
-            select! {
-                _ = tick.recv() => {
-                    trace!("Received tick notification");
-                    let current = SteadyTime::now();
-                    let elapsed = current - instance.last_tick;
-                    instance.lag = instance.lag + elapsed;
-                    let mut loop_count = 0;
-                    while instance.lag >= instance.refresh_period {
-                        instance.calculate_tick();
-                        instance.lag = instance.lag - instance.refresh_period;
-                        loop_count += 1;
+                select! {
+                    _ = tick.recv() => {
+                        trace!("Received tick notification");
+                        let current = SteadyTime::now();
+                        let elapsed = current - instance.last_tick;
+                        instance.lag = instance.lag + elapsed;
+                        let mut loop_count = 0;
+                        while instance.lag >= instance.refresh_period {
+                            instance.calculate_tick();
+                            instance.lag = instance.lag - instance.refresh_period;
+                            loop_count += 1;
+                        }
+                        if loop_count != 1 {
+                            debug!("Needed to adjust the tick rate! loop count {}", loop_count);
+                        }
+                        // TODO: Should we check if we should do a few more iterations?
+                        instance.last_tick = current;
+                    },
+                    _ = players_update.recv() => {
+                        let vec = instance.entities
+                            .iter()
+                            .filter(|e| e.is_player())
+                            .map(|e| e.into_management_representation(instance.id, instance.map_id))
+                            .collect();
+                        instance.request.send(Request::PlayerUpdate(vec)).unwrap();
+                    },
+                    command = rx.recv() => {
+                        let command = command.unwrap();
+                        println!("Received command {:?}", command);
+                        if instance.apply(command) {
+                            break;
+                        }
                     }
-                    if loop_count != 1 {
-                        debug!("Needed to adjust the tick rate! loop count {}", loop_count);
-                    }
-                    // TODO: Should we check if we should do a few more iterations?
-                    instance.last_tick = current;
-                },
-                _ = players_update.recv() => {
-                    let vec = instance.entities
-                        .iter()
-                        .filter(|e| e.is_player())
-                        .map(|e| e.into_management_representation(instance.id, instance.map_id))
-                        .collect();
-                    instance.request.send(Request::PlayerUpdate(vec)).unwrap();
-                },
-                command = rx.recv() => {
-                    let command = command.unwrap();
-                    println!("Received command {:?}", command);
-                    instance.apply(command);
                 }
-            }
             }
             debug!("Stopping instance {}", instance.id);
         });
@@ -250,13 +252,15 @@ impl Instance {
         instance
     }
 
-    fn apply(&mut self, command: Command) {
+    // Returns true to stop event loop
+    fn apply(&mut self, command: Command) -> bool {
         match command {
             Command::NewClient(actor,entities) => {
                 self.register_client(actor, entities);
             }
             Command::Shutdown => {
                 self.shutdown();
+                return true;
             }
             Command::UnregisterActor(id) => {
                 self.unregister_client(id);
@@ -268,6 +272,8 @@ impl Instance {
                 self.assign_entity_to_actor(actor, entity);
             }
         }
+
+        false
     }
 
     fn register_client(
@@ -365,7 +371,6 @@ impl Instance {
             // condition)
             warn!("Missing actor {} when sending entity {}", id, entity.get_id());
             // TODO: Should send back to the Game
-            unimplemented!();
         }
         debug!("{}", self);
     }

@@ -100,14 +100,17 @@ impl Game {
             // This is the "event loop"
             debug!("Started game");
             for request in rx {
-                game.apply(request);
+                if game.apply(request) {
+                    break;
+                }
             }
             debug!("Stopping game");
         });
         Ok(sender)
     }
 
-    fn apply(&mut self, request: Request) {
+    // Returns true to exit the loop
+    fn apply(&mut self, request: Request) -> bool {
         match request {
             Request::Arbitrary(req) => {
                 req.execute(self);
@@ -132,7 +135,7 @@ impl Game {
                 state.was_saved = true;
 
                 if self.shutdown && self.instances.is_empty() {
-                    unimplemented!();
+                    return true;
                 }
             }
             Request::JobFinished(job) => {
@@ -152,13 +155,19 @@ impl Game {
                 }
             }
             Request::NewClient(client) => {
-                let player_id = Id::forge(client.uuid);
-                // TODO: Generate earlier? (during the connexion, in the network code)
-                let client_id = Id::new();
-                let actor = NetworkActor::new(client_id, client);
-                self.player_ready(actor, player_id);
+                if self.shutdown {
+                    // Drop the client
+                } else {
+                    let player_id = Id::forge(client.uuid);
+                    // TODO: Generate earlier? (during the connexion, in the network code)
+                    let client_id = Id::new();
+                    let actor = NetworkActor::new(client_id, client);
+                    self.player_ready(actor, player_id);
+                }
             }
         }
+        // Default: don't exit
+        false
     }
 
     fn start_shutdown(&mut self) {
@@ -168,8 +177,9 @@ impl Game {
                 let _ = instance.send(Command::Shutdown);
             }
         }
-        unimplemented!();
-        // TODO: Drop self.serve so it does not listen any more
+
+        // TODO: Shutdown the network side
+        // At the moment, there is no clean way of doing this
     }
 
     // Spawn a new instance if needed

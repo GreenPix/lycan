@@ -54,14 +54,26 @@ const DEFAULT_CAPACITY: usize = 1024;
 
 pub struct Client {
     pub uuid: Uuid,
-    sender: Sender<NetworkNotification>,
+    sender: Sender<InternalNotification>,
     receiver: StdReceiver<NetworkCommand>,
+}
+
+#[derive(Debug)]
+enum InternalNotification {
+    Disconnect,
+    NetworkNotification(NetworkNotification),
+}
+
+impl From<NetworkNotification> for InternalNotification {
+    fn from(n: NetworkNotification) -> InternalNotification {
+        InternalNotification::NetworkNotification(n)
+    }
 }
 
 impl Client {
     pub fn send(&mut self, notif: NetworkNotification) -> Result<(),()> {
         // TODO: Error handling
-        self.sender.send(notif).map_err(|_| ())
+        self.sender.send(notif.into()).map_err(|_| ())
     }
 
     pub fn recv(&mut self) -> Result<Option<NetworkCommand>,()> {
@@ -70,6 +82,12 @@ impl Client {
             Err(TryRecvError::Empty) => Ok(None),
             Err(TryRecvError::Disconnected) => Err(()),
         }
+    }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        let _ = self.sender.send(InternalNotification::Disconnect);
     }
 }
 
@@ -140,15 +158,34 @@ where S: Stream<Item=NetworkCommand,Error=String> + Send + 'static,
     let (tx1, rx1) = std::sync::mpsc::channel();
     let (tx2, rx2) = tokio_core::channel::channel(&handle).unwrap();
 
-    let fut1 = messages.for_each(move |message| {
-        tx1.send(message).unwrap();
-        Ok(())
-    }).map_err(|e| format!("Error in messages {}", e));
+    // fut1 reads every command on the network, and sends them to the corresponding Client struct
+    let fut1 = messages
+        .map_err(|e| format!("Error in messages {}", e))
+        .for_each(move |message| {
+            // We send every message in the channel
+            // The Game or Instance can use Client::recv() to get those messages
+            let res = tx1.send(message);
+            if res.is_err() {
+                Err("Error when sending command, client disconnected".to_string())
+            } else {
+                Ok(())
+            }
+        });
 
-    let fut2 = rx2.map_err(|e| format!("Error reading from channel {}", e))
+    // fut2 gets notifications from the Instance, and writes them on the network
+    let fut2 = rx2
+        .map_err(|e| format!("Error reading from channel {}", e))
         .fold(write, |write, buffer| {
             debug!("Sending notification {:?}", buffer);
-            serialize_future(buffer, write)
+            let res = match buffer {
+                InternalNotification::Disconnect => {
+                    Err("The Game has disconnected the client".to_string())
+                }
+                InternalNotification::NetworkNotification(n) => {
+                    Ok(serialize_future(n, write))
+                }
+            };
+            res.into_future().flatten()
         }).map(|_| ());
 
     let fut = fut1.join(fut2).map(|_| ())
@@ -244,16 +281,20 @@ fn verify_token(uuid: Uuid,
                 token: AuthenticationToken,
                 tx: StdSender<Request>)
     -> impl Future<Item=(bool,StdSender<Request>),Error=String> {
-    // Simulates a delay in the authentication ...
     let (complete, oneshot) = futures::oneshot();
     let request = Request::new(move |game| {
         complete.complete(game.verify_token(Id::forge(uuid), token));
     });
-    tx.send(request).unwrap();
 
-    oneshot
-        .map(|res| (res, tx))
-        .map_err(|_| "Verify token cancelled".to_string())
+    let res = tx.send(request);
+    if res.is_err() {
+        Err("Game was shutdown or panicked during connection".to_string())
+    } else {
+        let fut = oneshot
+            .map(|success| (success, tx))
+            .map_err(|_| "Verify token cancelled".to_string());
+        Ok(fut)
+    }.into_future().flatten()
 }
 
 #[derive(Debug)]
