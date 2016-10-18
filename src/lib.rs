@@ -1,3 +1,5 @@
+#![feature(conservative_impl_trait)]
+#![feature(mpsc_select)]
 #![feature(fnbox)]
 
 #![allow(unused_imports)]
@@ -8,7 +10,7 @@ extern crate rustc_serialize;
 #[macro_use] extern crate log;
 //extern crate id;
 extern crate time;
-extern crate mio;
+//extern crate mio;
 extern crate byteorder;
 extern crate threadpool;
 extern crate lycan_serialize;
@@ -21,6 +23,9 @@ extern crate behaviour_tree;
 extern crate serde;
 extern crate serde_json;
 extern crate uuid;
+extern crate futures;
+extern crate tokio_core;
+extern crate schedule_recv;
 
 // Iron and related crates
 #[macro_use] extern crate iron;

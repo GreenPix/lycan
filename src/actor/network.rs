@@ -2,13 +2,11 @@ use std::fmt::{self,Formatter,Display};
 use std::io::{self,Write,Error};
 use std::collections::{hash_set,HashSet,HashMap};
 
-use mio::*;
-
 use id::{self,Id,HasId};
 use entity::{Entity,EntityStore};
 use messages::{self,Command,Notification,EntityOrder};
 use messages::{NetworkCommand};
-use network::{Client,ClientError,Message};
+use network::{Client,ClientError};
 use actor::ActorId;
 
 #[derive(Debug)]
@@ -53,6 +51,26 @@ impl NetworkActor {
         }
     }
 
+    fn receive_commands(&mut self) {
+        loop {
+            match self.client.recv() {
+                Ok(Some(NetworkCommand::EntityOrder(order))) => {
+                    self.commands.orders.push(order);
+                }
+                Ok(Some(NetworkCommand::GameCommand(c))) => {
+                    error!("Error: the client is not supposed to send GameCommands after authentication {:?}", c);
+                    self.commands.push(Command::UnregisterActor(self.id));
+                    break;
+                }
+                Ok(None) => break,
+                Err(()) => {
+                    self.commands.push(Command::UnregisterActor(self.id));
+                    break;
+                }
+            }
+        }
+    }
+
     pub fn get_commands(&mut self, other: &mut Vec<Command>) {
         self.commands.get_commands(other);
     }
@@ -61,6 +79,7 @@ impl NetworkActor {
                       entities: &mut EntityStore,
                       notifications: &mut Vec<Notification>,
                       _previous: &[Notification]) {
+        self.receive_commands();
         for order in self.commands.orders.drain(..) {
             match id::get_id_if_exists(&self.entities, order.entity) {
                 None => {
@@ -89,63 +108,11 @@ impl NetworkActor {
         Ok(())
     }
 
-    /// Registers this actor to the event loop
-    pub fn register<H: Handler>(&self, event_loop: &mut EventLoop<H>) -> Result<(),io::Error> {
-        self.client.register(event_loop, self.id.as_token())
-    }
-
-    /// Deregisters this actor to the event loop
-    pub fn deregister<H: Handler>(&self, event_loop: &mut EventLoop<H>) -> Result<(),io::Error> {
-        self.client.deregister(event_loop)
-    }
-
-    pub fn ready<H: Handler>(&mut self, event_loop: &mut EventLoop<H>, event: EventSet) {
-        match self.client.ready(event_loop, event, self.id.as_token()) {
-            Err(ClientError::Disconnected) => {
-                self.commands.push(Command::UnregisterActor(self.id));
-            }
-            Err(e) => {
-                // IO or serialisation error
-                error!("Client {} error: {:?}", self.id, e);
-                self.commands.push(Command::UnregisterActor(self.id));
-                if let Err(e) = self.client.deregister(event_loop) {
-                    error!("Error when unregistering client: {}", e);
-                }
-            }
-            Ok(messages) => {
-                for message in messages.into_iter() {
-                    match message {
-                        NetworkCommand::GameCommand(_command) => {
-                            // TODO
-                            // Verify the command has a correct origin ...
-                            unimplemented!();
-                        }
-                        NetworkCommand::EntityOrder(order) => {
-                            self.commands.orders.push(order.into());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn is_connected(&self) -> bool {
-        self.client.is_connected()
-    }
-
-    pub fn send_message<H:Handler>(&mut self, event_loop: &mut EventLoop<H>, message: Message) {
-        if let Err(e) = self.client.send_message(event_loop, message, self.id.as_token()) {
-            error!("Error when sending message to client {}: {:?}", self.id, e);
+    pub fn send_message(&mut self, message: Notification) {
+        if let Err(e) = self.client.send(message.into()) {
+            error!("Error when sending message to client {}: {:?}", self.client.uuid, e);
             self.commands.push(Command::UnregisterActor(self.id));
-            if let Err(err) = self.client.deregister(event_loop) {
-                error!("Error when unregistering client: {}", err);
-            }
         }
-    }
-
-    /// Queue a message, that will be sent once this actor is reregistered in an event loop
-    pub fn queue_message(&mut self, message: Message) {
-        self.client.queue_message(message);
     }
 }
 
