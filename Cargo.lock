@@ -396,11 +396,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 [[package]]
 name = "lycan-serialize"
 version = "0.1.1"
-source = "git+https://github.com/Greenpix/lycan-serialize.git#fe4ac68b5a7692bc6498ad5bc65deff58b016303"
+source = "git+https://github.com/Greenpix/lycan-serialize.git#22905d505a6fbefc47e47e3b5daa7cbb61d2f2e3"
 dependencies = [
  "byteorder 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "rustc-serialize 0.3.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 0.8.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_codegen 0.8.10 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 0.8.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "uuid 0.3.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
@@ -1013,7 +1015,6 @@ version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "rand 0.3.14 (registry+https://github.com/rust-lang/crates.io-index)",
- "rustc-serialize 0.3.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde 0.8.10 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
