@@ -3,12 +3,20 @@
 
 use std::collections::HashMap;
 
-use super::{Entity,Order,EntityStore,OthersAccessor};
+use entity::{
+    Entity,
+    Order,
+    EntityStore,
+    OthersAccessor,
+};
 use messages::Notification;
 use id::Id;
 
 use lycan_serialize::Direction;
-use instance::SEC_PER_UPDATE;
+use instance::{
+    SEC_PER_UPDATE,
+    TickEvent,
+};
 use scripts::AaribaScripts;
 
 mod attacks;
@@ -19,10 +27,21 @@ pub fn update(
     entities: &mut EntityStore,
     notifications: &mut Vec<Notification>,
     scripts: &AaribaScripts,
-    ) {
-    attacks::resolve_attacks(entities, notifications, scripts);
+    ) -> Vec<TickEvent> {
+    // During a tick, every event that can affect an entity (an entity attacking, a spell cast,
+    // a projectile hitting) will be randomly ordered, and all of them will be executed in
+    // sequence.
+    // In other words, if two actions happen during the same server tick, the order between those
+    // two actions will be *random*, but there will be one: the result will be the same as if the
+    // two actions happened during two separate ticks.
+    // This algorithm aims to prevent bad interractions between spells, leading to weird behaviour
+    // when happening during the same tick
+
+    let mut tick_events = Vec::new();
     movement::resolve_movements(entities, notifications);
+    attacks::resolve_attacks(entities, notifications, scripts, &mut tick_events);
     generate_position_updates(entities, notifications);
+    tick_events
 }
 
 fn generate_position_updates(

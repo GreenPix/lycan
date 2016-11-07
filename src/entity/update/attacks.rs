@@ -1,7 +1,11 @@
 use lycan_serialize::Direction;
 use aariba::expressions::{Store};
 
-use instance::SEC_PER_UPDATE;
+use id::Id;
+use instance::{
+    SEC_PER_UPDATE,
+    TickEvent,
+};
 use entity::{
     Entity,
     Order,
@@ -16,23 +20,45 @@ pub fn resolve_attacks(
     entities: &mut EntityStore,
     notifications: &mut Vec<Notification>,
     scripts: &AaribaScripts,
+    events: &mut Vec<TickEvent>,
     ) {
-    let mut double_iterator = entities.iter_mut_wrapper();
-    while let Some((entity, mut wrapper)) = double_iterator.next_item() {
-        trace!("Entity {} {:?}", entity.id, entity.attacking);
-        match entity.attacking {
-            AttackState::Idle => {}
-            AttackState::Attacking => {
-                entity.attacking = AttackState::Reloading(1.0);
-                resolve_hit(entity, &mut wrapper, notifications, scripts);
-            }
-            AttackState::Reloading(delay) => {
-                let remaining = delay - entity.stats.attack_speed * *SEC_PER_UPDATE;
-                if remaining < 0.0 {
-                    entity.attacking = AttackState::Idle;
-                } else {
-                    entity.attacking = AttackState::Reloading(remaining);
+    // Indicates entities that die during that tick
+    // As soon as the entity dies, it should *stop interracting with the world*
+    let mut dead_entities_id = vec![];
+
+    {
+        // Iterate through all entities
+        let mut double_iterator = entities.iter_mut_wrapper();
+        while let Some((entity, mut wrapper)) = double_iterator.next_item() {
+            if !dead_entities_id.contains(&entity.id) {
+                trace!("Entity {} {:?}", entity.id, entity.attacking);
+                match entity.attacking {
+                    AttackState::Idle => {}
+                    AttackState::Attacking => {
+                        entity.attacking = AttackState::Reloading(1.0);
+                        resolve_hit(entity, &mut wrapper, notifications, scripts, &mut dead_entities_id);
+                    }
+                    AttackState::Reloading(delay) => {
+                        let remaining = delay - entity.stats.attack_speed * *SEC_PER_UPDATE;
+                        if remaining < 0.0 {
+                            entity.attacking = AttackState::Idle;
+                        } else {
+                            entity.attacking = AttackState::Reloading(remaining);
+                        }
+                    }
                 }
+            }
+        }
+    }
+
+    for dead_id in dead_entities_id {
+        match entities.remove(dead_id) {
+            Some(dead_entity) => {
+                events.push(TickEvent::EntityDeath(dead_entity));
+            }
+            None => {
+                error!("Could not find dead entity {} in the store, but it was scheduled for removal",
+                       dead_id);
             }
         }
     }
@@ -41,17 +67,24 @@ pub fn resolve_attacks(
 fn resolve_hit(
     attacker: &mut Entity,
     others: &mut OthersAccessor,
-    _notifications: &mut Vec<Notification>,
+    notifications: &mut Vec<Notification>,
     scripts: &AaribaScripts,
+    dead_entities_id: &mut Vec<Id<Entity>>,
     ) {
     for entity in others.iter_mut() {
-        if attack_success(attacker, entity) {
-            let mut integration = AaribaIntegration::new(attacker, entity);
-            match scripts.combat.evaluate(&mut integration) {
-                Ok(()) => {}
-                Err(e) => {
-                    error!("Script error: {:#?}", e);
-                    continue;
+        if !dead_entities_id.contains(&entity.id) {
+            if attack_success(attacker, entity) {
+                let mut integration = AaribaIntegration::new(attacker,
+                                                             entity,
+                                                             notifications,
+                                                             dead_entities_id,
+                                                             );
+                match scripts.combat.evaluate(&mut integration) {
+                    Ok(()) => {}
+                    Err(e) => {
+                        error!("Script error: {:#?}", e);
+                        continue;
+                    }
                 }
             }
         }
@@ -86,12 +119,14 @@ fn attack_success(attacker: &Entity, target: &Entity) -> bool {
 }
 
 #[derive(Debug)]
-struct AaribaIntegration<'a,'b> {
+struct AaribaIntegration<'a,'b, 'c, 'd> {
     source: &'a mut Entity,
     target: &'b mut Entity,
+    notifications: &'c mut Vec<Notification>,
+    dead_entities_id: &'d mut Vec<Id<Entity>>,
 }
 
-impl <'a,'b> Store for AaribaIntegration<'a,'b> {
+impl <'a, 'b, 'c, 'd> Store for AaribaIntegration<'a, 'b, 'c, 'd> {
     fn get_attribute(&self, var: &str) -> Option<f64> {
         let mut splitn = var.splitn(2, '.');
         let first = match splitn.next() {
@@ -120,10 +155,21 @@ impl <'a,'b> Store for AaribaIntegration<'a,'b> {
         };
         match first {
             "target" => {
-                set_attribute(self.target, second, value)
+                set_attribute(self.target,
+                              self.source.id,
+                              second,
+                              value,
+                              self.notifications,
+                              self.dead_entities_id)
             }
             "source" => {
-                set_attribute(self.source, second, value)
+                let id = self.source.id;
+                set_attribute(self.source,
+                              id,
+                              second,
+                              value,
+                              self.notifications,
+                              self.dead_entities_id)
             }
             _ => Err(()),
         }
@@ -132,24 +178,49 @@ impl <'a,'b> Store for AaribaIntegration<'a,'b> {
 
 fn set_attribute(
     entity: &mut Entity,
+    source: Id<Entity>,     // Can potentially be the same as entity.id
     var: &str,
     value: f64,
+    notifications: &mut Vec<Notification>,
+    dead_entities_id: &mut Vec<Id<Entity>>,
     ) -> Result<Option<f64>,()> {
     match var {
-        "pv" => {
-            let old = entity.pv as f64;
-            entity.pv = value as u64;
-            Ok(Some(old))
+        "damage" => {
+            if entity.pv != 0 {
+                notifications.push(Notification::Damage {
+                    source: source.as_u64(),
+                    victim: entity.id.as_u64(),
+                    amount: value as u64,
+                });
+                let new_pv = entity.pv as f64 - value;
+                if new_pv < 0.0 {
+                    // Death of entity
+                    entity.pv = 0;
+                    dead_entities_id.push(entity.id);
+                } else {
+                    entity.pv = new_pv as u64;
+                }
+            } else {
+                warn!("Trying to damage a dead entity {}", entity.id);
+            }
+            Ok(None)
         }
         _ => Err(()),
     }
 }
 
-impl <'a,'b> AaribaIntegration<'a,'b> {
-    fn new(source: &'a mut Entity, target: &'b mut Entity) -> AaribaIntegration<'a, 'b> {
+impl <'a, 'b, 'c, 'd> AaribaIntegration<'a, 'b, 'c, 'd> {
+    fn new(
+        source: &'a mut Entity,
+        target: &'b mut Entity,
+        notifications: &'c mut Vec<Notification>,
+        dead_entities_id: &'d mut Vec<Id<Entity>>,
+        ) -> AaribaIntegration<'a, 'b, 'c, 'd> {
         AaribaIntegration {
             source: source,
             target: target,
+            notifications: notifications,
+            dead_entities_id: dead_entities_id,
         }
     }
 }

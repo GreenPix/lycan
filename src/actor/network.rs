@@ -109,9 +109,16 @@ impl NetworkActor {
     }
 
     pub fn send_message(&mut self, message: Notification) {
-        if let Err(e) = self.client.send(message.into()) {
-            error!("Error when sending message to client {}: {:?}", self.client.uuid, e);
-            self.commands.push(Command::UnregisterActor(self.id));
+        match message.into() {
+            Some(network_notif) => {
+                if let Err(e) = self.client.send(network_notif) {
+                    error!("Error when sending message to client {}: {:?}", self.client.uuid, e);
+                    self.commands.push(Command::UnregisterActor(self.id));
+                }
+            }
+            None => {
+                // A notification that didn't translate to a network event
+            }
         }
     }
 }
