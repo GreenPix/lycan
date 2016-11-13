@@ -18,14 +18,25 @@ use data::{Map,Monster};
 
 pub mod management;
 
+// TODO: what is GAME_PLAYER_REFRESH_PERIOD
 lazy_static! {
     static ref GAME_PLAYER_REFRESH_PERIOD: Duration = Duration::seconds(2);
 }
 
-
+// An Actor within lycan is a component within the system that is
+// responsible for a set of entities. An actor can be of many forms,
+// for instance a remote player gets an actor to receive and process
+// its input within the server. A mob spawnner is an actor which
+// populates an instance with a set of mobs.
+//
+// From the begining, lycan only gets a few structures to manage all
+// the possible actors.  As the engine becomes more and more rich in
+// feature, we know consider the possibility to seek other
+// alternatives: enum type, trait objects, etc.
+//
+// See https://github.com/greenpix/lycan/...
 #[derive(Debug,Default)]
 struct Actors {
-    // Design questions: separate all actors? Put them in enum? Use trait objects?
     internal_actors: HashMap<ActorId, AiActor>,
     external_actors: HashMap<ActorId, NetworkActor>,
 }
@@ -33,6 +44,7 @@ struct Actors {
 impl Actors {
     fn register_client(&mut self, actor: NetworkActor) {
         let id = actor.get_id();
+
         match self.external_actors.entry(id) {
             Entry::Occupied(mut entry) => {
                 error!("Erasing old actor {:?}", entry.get());
@@ -46,6 +58,7 @@ impl Actors {
 
     fn register_internal(&mut self, actor: AiActor) {
         let id = actor.get_id();
+
         match self.internal_actors.entry(id) {
             Entry::Occupied(mut entry) => {
                 error!("Erasing old actor {:?}", entry.get());
@@ -66,6 +79,9 @@ impl Actors {
         self.internal_actors.remove(&id)
     }
 
+    // Notification are not being broadcasted to internal actors
+    //
+    // See https://github.com/greenpix/lycan/...
     fn broadcast_notifications(&mut self,
                                notifications: &[Notification]) {
         for client in self.external_actors.values_mut() {
@@ -75,9 +91,13 @@ impl Actors {
         }
     }
 
+    // It is not clear if the current implementation is satisfying or
+    // not
+    //
+    // See https://github.com/greenpix/lycan/...
     fn get_commands(&mut self) -> Vec<Command> {
-        // XXX Is this a good idea to do it this way?
         let mut commands_buffer = Vec::new();
+
         for (_, actor) in self.external_actors.iter_mut() {
             actor.get_commands(&mut commands_buffer);
         }
@@ -85,13 +105,20 @@ impl Actors {
         for (_, actor) in self.internal_actors.iter_mut() {
             actor.get_commands(&mut commands_buffer);
         }
+
         commands_buffer
     }
 
+    // In the current state of lycan, the Actors of an instance has a
+    // direct access to the instance entities. It is not clear rather or
+    // not this is a satisfying solution.
+    //
+    // See https://github.com/greenpix/lycan/...
     fn execute_orders(&mut self,
                       entities: &mut EntityStore,
                       notifications: &mut Vec<Notification>,
                       previous: &[Notification]) {
+
         for (_, actor) in self.external_actors.iter_mut() {
             actor.execute_orders(entities, notifications, previous);
         }
@@ -103,21 +130,28 @@ impl Actors {
     fn assign_entity_to_actor(&mut self, actor: ActorId, entity: Id<Entity>) -> bool {
         if let Some(actor) = self.external_actors.get_mut(&actor) {
             actor.register_entity(entity);
-            return true;
-        }
-        if let Some(actor) = self.internal_actors.get_mut(&actor) {
+
+            true
+        } else if let Some(actor) = self.internal_actors.get_mut(&actor) {
             actor.register_entity(entity);
-            return true;
+
+            true
+        } else {
+            false
         }
-        false
     }
 
-    // TODO: rewrite correctly
+    // The current implementation is not satisfying and should be rewriten as soon
+    // as we finnd a better solution
+    //
+    // See https://github.com/greenpix/lycan/...
     fn dump(&self, f: &mut Formatter, entities: &EntityStore) -> Result<(),Error> {
         let mut indent;
+
         for actor in self.external_actors.values() {
             indent = "    ";
             try!(actor.dump(f, indent));
+
             for entity_id in actor.entities_iter() {
                 indent = "        ";
                 try!(match entities.get(*entity_id) {
@@ -128,6 +162,7 @@ impl Actors {
                 });
             }
         }
+
         Ok(())
     }
 
@@ -138,23 +173,29 @@ impl Actors {
 
 
 pub struct Instance {
-    id: Id<Instance>,
+    id:                   Id<Instance>,
 
-    map_id: Id<Map>,
-    entities: EntityStore,
-    actors: Actors,
-    request: Sender<Request>,
-    last_tick: SteadyTime,
-    lag: Duration,
+    // game state
+    map_id:               Id<Map>,
+    entities:             EntityStore,
+    actors:               Actors,
+    request:              Sender<Request>,
+
+    // time management
+    tick_duration:        f32,
+    last_tick:            SteadyTime,
+    lag:                  Duration,
+    created_at:           Tm,
+
     // We will need the previous notifications for AI
-    prev_notifications: Vec<Notification>,
-    next_notifications: Vec<Notification>,
-    scripts: AaribaScripts,
-    trees: BehaviourTrees,
-    shutting_down: bool,
-    created_at: Tm,
+    prev_notifications:   Vec<Notification>,
+    next_notifications:   Vec<Notification>,
 
-    tick_duration: f32,
+    // assets
+    scripts:              AaribaScripts,
+    trees:                BehaviourTrees,
+
+    shutting_down:        bool,
 }
 
 impl Instance {
@@ -184,7 +225,7 @@ impl Instance {
                         instance.lag = instance.lag + elapsed;
                         let mut loop_count = 0;
                         while instance.lag >= refresh_period {
-                            instance.calculate_tick();
+                            instance.compute_tick();
                             instance.lag = instance.lag - refresh_period;
                             loop_count += 1;
                         }
@@ -241,10 +282,15 @@ impl Instance {
             created_at: time::now_utc(),
         };
 
-        // XXX Fake an AI on the map
+        // We currently hard code the presence of an AI within a map.
+        // This should be removed as soon as we have a better game
+        // project management
+        //
+        // See https://github.com/greenpix/lycan/...
         let class_str = "67e6001e-d735-461d-b32e-2e545e12b3d2";
         let uuid = Uuid::parse_str(class_str).unwrap();
         instance.add_fake_ai(Id::forge(uuid), 0.0, 0.0);
+
         instance
     }
 
@@ -274,13 +320,12 @@ impl Instance {
         self.shutting_down
     }
 
-    fn register_client(
-        &mut self,
-        mut actor: NetworkActor,
-        entities: Vec<Entity>,
-        ) {
+    fn register_client(&mut self,
+                       mut actor: NetworkActor,
+                       entities: Vec<Entity>) {
         let id = actor.get_id();
         trace!("Registering actor {} in instance {}", id, self.id);
+
         for entity in self.entities.iter() {
             let position = entity.get_position();
             let skin = entity.get_skin();
@@ -289,6 +334,7 @@ impl Instance {
             let notification = Notification::new_entity(entity_id, position, skin, pv);
             actor.send_message(notification);
         }
+
         for entity in entities {
             let entity_id = entity.get_id().as_u64();
             let position = entity.get_position();
@@ -298,13 +344,17 @@ impl Instance {
             self.next_notifications.push(notification);
             self.entities.push(entity);
         }
+
         self.actors.register_client(actor);
     }
 
     fn unregister_client(&mut self, id: ActorId) {
         match self.actors.unregister_client(id) {
             Some(actor) => {
-                // TODO: Check first if the actor needs to be sent back to the Game
+                // TODO: Check first if the actor needs to be sent
+                // back to the Game
+                //
+                // See https://github.com/greenpix/lycan/...
                 let mut entities = Vec::new();
                 for entity_id in actor.entities_iter() {
                     match self.entities.remove(*entity_id) {
@@ -345,9 +395,13 @@ impl Instance {
         }
 
         if let Err(e) = self.request.send(Request::InstanceShuttingDown(state)) {
-            // TODO: Something to do with the state we got back?
+            // TODO: It is not clear wether or not we have something
+            // to do with the state we got back from this call?
+            //
+            // See https://github.com/greenpix/lycan/...
             error!("The Game instance has hung up!\n{:#?}", e);
         }
+
         self.shutting_down = true;
     }
 
@@ -356,17 +410,27 @@ impl Instance {
         let position = entity.get_position();
         let skin = entity.get_skin();
         let pv = entity.get_pv();
+
         if self.actors.assign_entity_to_actor(id, entity_id) {
             entity.set_actor(Some(id));
             self.entities.push(entity);
             let notification = Notification::new_entity(entity_id.as_u64(), position, skin, pv);
             self.next_notifications.push(notification);
         } else {
-            // Could be normal operation if the actor has just been unregistered (race
-            // condition)
+            // We are subject to a race condition here. It is possible
+            // that an actor has been removed after the request to
+            // assign to it an entity has been raised but before this
+            // request has been processed by the instance.  In such a
+            // case, the entity should be send back to the Game
+            // instance.
+            //
+            // See https://github.com/greenpix/lycan/...
             warn!("Missing actor {} when sending entity {}", id, entity.get_id());
-            // TODO: Should send back to the Game
         }
+
+        // This should been removed or at least disable by default
+        //
+        // See https://github.com/greenpix/lycan/...
         debug!("{}", self);
     }
 
@@ -374,23 +438,36 @@ impl Instance {
         self.id
     }
 
-    fn calculate_tick(&mut self) {
-        trace!("Instance {}: Calculating tick\n{}", self.id, self);
+    fn compute_tick(&mut self) {
+        trace!("Instance {}: Computing tick\n{}", self.id, self);
+
         self.actors.execute_orders(&mut self.entities,
                                    &mut self.next_notifications,
                                    &self.prev_notifications);
 
+        // we process each events, that is something that occurs
+        // between two ticks and need to be handle by the
+        // instance. For example, an entity which executes a step
+        // raises an event.
         let events = entity::update(&mut self.entities, &mut self.next_notifications, &self.scripts, self.tick_duration);
         for event in events {
             self.process_event(event);
         }
 
+        // once the events are processed, we deal with the commands.
         let commands_buffer = self.actors.get_commands();
         for command in commands_buffer {
             self.apply(command);
         }
+
+        // the result of the two previous steps is the production of a
+        // bunch of notifications that describe the game state
+        // updates. This notifications are broadcasted to the actors
+        // in order for them to be able to decide the orders they will
+        // send for the next tick.
         self.actors.broadcast_notifications(&self.next_notifications);
         debug!("Notifications: {:?}", self.next_notifications);
+
         self.prev_notifications.clear();
         mem::swap(&mut self.prev_notifications, &mut self.next_notifications);
     }
@@ -477,17 +554,17 @@ impl Display for Instance {
     }
 }
 
-/// A list of things that can happen during tick calculation, which require work from the instance
+/// A list of things that can happen during tick computation, which require work from the instance
 pub enum TickEvent {
     EntityDeath(Entity),
 }
 /// Regular or delayed operations that will execute on an Instance
 pub enum InstanceTick {
-    /// The main operation will be calculating the next tick
+    /// The main operation will be computing the next tick
     ///
     /// This will among other things execute all actions made by players
     /// since the last tick, resolve AI trees and send the update to players
-    CalculateTick,
+    ComputeTick,
     /// This will update the Game's knowledge of all Player in this map
     UpdatePlayers,
 }
