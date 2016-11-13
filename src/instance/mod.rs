@@ -252,7 +252,10 @@ impl Instance {
         instance
     }
 
-    // Returns true to stop event loop
+    // Apply a command to update the game state.
+    //
+    // returns: true if the instance has been shutdown while executing
+    // the command, false otherwise
     fn apply(&mut self, command: Command) -> bool {
         match command {
             Command::NewClient(actor,entities) => {
@@ -260,7 +263,6 @@ impl Instance {
             }
             Command::Shutdown => {
                 self.shutdown();
-                return true;
             }
             Command::UnregisterActor(id) => {
                 self.unregister_client(id);
@@ -273,7 +275,7 @@ impl Instance {
             }
         }
 
-        false
+        self.shutting_down
     }
 
     fn register_client(
