@@ -4,7 +4,6 @@ use nalgebra::Point2;
 use lycan_serialize::Direction;
 
 use messages::Notification;
-use instance::SEC_PER_UPDATE;
 use entity::{
     Entity,
     Order,
@@ -14,15 +13,17 @@ use entity::{
 pub fn resolve_movements(
     entities: &mut EntityStore,
     notifications: &mut Vec<Notification>,
+    tick_duration: f32,
     ) {
     for entity in entities.iter_mut() {
-        resolve_collisions(entity, notifications)
+        resolve_collisions(entity, notifications, tick_duration)
     }
 }
 
 fn resolve_collisions(
     entity: &mut Entity,
     _notifications: &mut Vec<Notification>,
+    tick_duration: f32,
     ) {
     // Assume no collisions at the moment ...
     let unitary_speed = if entity.walking {
@@ -36,7 +37,7 @@ fn resolve_collisions(
         Vector2::new(0.0, 0.0)
     };
     let speed = unitary_speed * entity.stats.speed;
-    let new_position = entity.position + (speed * *SEC_PER_UPDATE);
+    let new_position = entity.position + speed * tick_duration;
     entity.position = new_position;
     entity.speed = speed;
 }

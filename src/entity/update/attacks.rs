@@ -3,7 +3,6 @@ use aariba::expressions::{Store};
 
 use id::Id;
 use instance::{
-    SEC_PER_UPDATE,
     TickEvent,
 };
 use entity::{
@@ -21,6 +20,7 @@ pub fn resolve_attacks(
     notifications: &mut Vec<Notification>,
     scripts: &AaribaScripts,
     events: &mut Vec<TickEvent>,
+    tick_duration: f32,
     ) {
     // Indicates entities that die during that tick
     // As soon as the entity dies, it should *stop interracting with the world*
@@ -39,7 +39,7 @@ pub fn resolve_attacks(
                         resolve_hit(entity, &mut wrapper, notifications, scripts, &mut dead_entities_id);
                     }
                     AttackState::Reloading(delay) => {
-                        let remaining = delay - entity.stats.attack_speed * *SEC_PER_UPDATE;
+                        let remaining = delay - entity.stats.attack_speed * tick_duration;
                         if remaining < 0.0 {
                             entity.attacking = AttackState::Idle;
                         } else {

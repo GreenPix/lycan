@@ -32,6 +32,7 @@ const RESOURCE_MANAGER_THREADS: usize = 2;
 pub struct GameParameters {
     pub port: u16,
     pub configuration_url: String,
+    pub tick_duration: f32,
 }
 
 pub struct Game {
@@ -43,6 +44,7 @@ pub struct Game {
     resource_manager: ResourceManager,
     authentication_manager: AuthenticationManager,
     sender: Sender<Request>,
+    tick_duration: f32,
     callbacks: Callbacks,
     shutdown: bool,
 
@@ -57,6 +59,7 @@ impl Game {
         trees: BehaviourTrees,
         sender: Sender<Request>,
         base_url: String,
+        tick_duration: f32,
         ) -> Game {
         Game {
             map_instances: HashMap::new(),
@@ -65,6 +68,7 @@ impl Game {
             sender: sender.clone(),
             authentication_manager: AuthenticationManager::new(),
             resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS, sender, base_url),
+            tick_duration: tick_duration,
             callbacks: Callbacks::new(),
             shutdown: false,
             scripts: scripts,
@@ -88,6 +92,7 @@ impl Game {
             behaviour_trees,
             sender.clone(),
             parameters.configuration_url.clone(),
+            parameters.tick_duration,
             );
 
         // XXX: Hacks
@@ -205,6 +210,7 @@ impl Game {
                             self.scripts.clone(),
                             self.trees.clone(),
                             map,
+                            self.tick_duration,
                             );
                         instance.send(Command::NewClient(actor,entities)).unwrap();
                         Some(instance)

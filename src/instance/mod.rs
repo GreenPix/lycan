@@ -19,13 +19,7 @@ use data::{Map,Monster};
 pub mod management;
 
 lazy_static! {
-    // 16.666 ms (60 Hz)
-    pub static ref SEC_PER_UPDATE: f32 = {
-        DEFAULT_REFRESH_PERIOD.num_microseconds().unwrap() as f32 / 1000000.0
-    };
-    static ref DEFAULT_REFRESH_PERIOD: Duration = Duration::microseconds(16666);
     static ref GAME_PLAYER_REFRESH_PERIOD: Duration = Duration::seconds(2);
-    //static ref DEFAULT_REFRESH_PERIOD: Duration = Duration::milliseconds(1000);
 }
 
 
@@ -160,8 +154,7 @@ pub struct Instance {
     shutting_down: bool,
     created_at: Tm,
 
-    // XXX: Do we need to change the refresh period?
-    refresh_period: Duration,
+    tick_duration: f32,
 }
 
 impl Instance {
@@ -169,13 +162,14 @@ impl Instance {
                           scripts: AaribaScripts,
                           trees: BehaviourTrees,
                           map_id: Id<Map>,
+                          tick_duration: f32,
                           ) -> InstanceRef {
-        let mut instance = Instance::new(request, scripts, trees, map_id);
+        let mut instance = Instance::new(request, scripts, trees, map_id, tick_duration);
         let id = instance.get_id();
         let created_at = instance.created_at;
         let (sender, rx) = mpsc::channel();
         thread::spawn(move || {
-            let tick = schedule_recv::periodic(DEFAULT_REFRESH_PERIOD.to_std().unwrap());
+            let tick = schedule_recv::periodic(StdDuration::from_millis((tick_duration * 1000.0) as u64));
             let players_update = schedule_recv::periodic(GAME_PLAYER_REFRESH_PERIOD.to_std().unwrap());
             instance.last_tick = SteadyTime::now();
 
@@ -184,13 +178,14 @@ impl Instance {
                 select! {
                     _ = tick.recv() => {
                         trace!("Received tick notification");
+                        let refresh_period = Duration::microseconds((instance.tick_duration * 1_000_000.0) as i64);
                         let current = SteadyTime::now();
                         let elapsed = current - instance.last_tick;
                         instance.lag = instance.lag + elapsed;
                         let mut loop_count = 0;
-                        while instance.lag >= instance.refresh_period {
+                        while instance.lag >= refresh_period {
                             instance.calculate_tick();
-                            instance.lag = instance.lag - instance.refresh_period;
+                            instance.lag = instance.lag - refresh_period;
                             loop_count += 1;
                         }
                         if loop_count != 1 {
@@ -225,6 +220,7 @@ impl Instance {
            scripts: AaribaScripts,
            trees: BehaviourTrees,
            map_id: Id<Map>,
+           tick_duration: f32,
            ) -> Instance {
         use uuid::Uuid;
 
@@ -236,7 +232,7 @@ impl Instance {
             request: request,
             last_tick: SteadyTime::now(),
             lag: Duration::zero(),
-            refresh_period: *DEFAULT_REFRESH_PERIOD,
+            tick_duration: tick_duration,
             prev_notifications: Default::default(),
             next_notifications: Default::default(),
             scripts: scripts,
@@ -384,7 +380,7 @@ impl Instance {
                                    &mut self.next_notifications,
                                    &self.prev_notifications);
 
-        let events = entity::update(&mut self.entities, &mut self.next_notifications, &self.scripts);
+        let events = entity::update(&mut self.entities, &mut self.next_notifications, &self.scripts, self.tick_duration);
         for event in events {
             self.process_event(event);
         }

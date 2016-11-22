@@ -14,7 +14,6 @@ use id::Id;
 
 use lycan_serialize::Direction;
 use instance::{
-    SEC_PER_UPDATE,
     TickEvent,
 };
 use scripts::AaribaScripts;
@@ -27,6 +26,7 @@ pub fn update(
     entities: &mut EntityStore,
     notifications: &mut Vec<Notification>,
     scripts: &AaribaScripts,
+    tick_duration: f32,
     ) -> Vec<TickEvent> {
     // During a tick, every event that can affect an entity (an entity attacking, a spell cast,
     // a projectile hitting) will be randomly ordered, and all of them will be executed in
@@ -38,8 +38,8 @@ pub fn update(
     // when happening during the same tick
 
     let mut tick_events = Vec::new();
-    movement::resolve_movements(entities, notifications);
-    attacks::resolve_attacks(entities, notifications, scripts, &mut tick_events);
+    movement::resolve_movements(entities, notifications, tick_duration);
+    attacks::resolve_attacks(entities, notifications, scripts, &mut tick_events, tick_duration);
     generate_position_updates(entities, notifications);
     tick_events
 }
