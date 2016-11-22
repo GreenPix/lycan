@@ -44,27 +44,35 @@ impl From<NetworkCommand> for Command {
 */
 
 // TODO REMOVE
-impl From<Notification> for NetworkNotification {
-    fn from(notif: Notification) -> NetworkNotification {
-        match notif {
+impl Into<Option<NetworkNotification>> for Notification {
+    fn into(self) -> Option<NetworkNotification> {
+        match self {
             Notification::Walk {entity,orientation} =>
-                NetworkNotification::walk(entity,orientation),
+                Some(NetworkNotification::walk(entity,orientation)),
             Notification::Say{entity,message} =>
-                NetworkNotification::say(entity,message),
+                Some(NetworkNotification::say(entity,message)),
             Notification::Position{entity,position,speed,pv} =>
-                NetworkNotification::position(entity,
-                                              Vec2d{x: position.x, y: position.y},
-                                              Vec2d{x: speed.x, y: speed.y},
-                                              pv),
+                Some(NetworkNotification::position(entity,
+                                                   Vec2d{x: position.x, y: position.y},
+                                                   Vec2d{x: speed.x, y: speed.y},
+                                                   pv)),
             Notification::ThisIsYou{entity} =>
-                NetworkNotification::this_is_you(entity),
+                Some(NetworkNotification::this_is_you(entity)),
             Notification::NewEntity{entity,position,skin,pv} =>
-                NetworkNotification::new_entity(entity,
-                                                Vec2d{x: position.x, y: position.y},
-                                                skin,
-                                                pv),
+                Some(NetworkNotification::new_entity(entity,
+                                                     Vec2d{x: position.x, y: position.y},
+                                                     skin,
+                                                     pv)),
             Notification::EntityHasQuit{entity} => 
-                NetworkNotification::entity_has_quit(entity),
+                Some(NetworkNotification::entity_has_quit(entity)),
+            Notification::Damage{..} => {
+                // XXX: Need to send that to the network
+                None
+            }
+            Notification::Death{..} => {
+                // XXX: Need to send that to the network
+                None
+            }
         }
     }
 }

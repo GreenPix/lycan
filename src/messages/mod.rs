@@ -114,6 +114,14 @@ pub enum Notification {
     EntityHasQuit {
         entity: u64,
     },
+    Damage {
+        source: u64,
+        victim: u64,
+        amount: u64,
+    },
+    Death {
+        entity: u64,
+    },
 }
 
 pub enum GameCommand {}

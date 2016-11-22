@@ -382,7 +382,10 @@ impl Instance {
                                    &mut self.next_notifications,
                                    &self.prev_notifications);
 
-        entity::update(&mut self.entities, &mut self.next_notifications, &self.scripts);
+        let events = entity::update(&mut self.entities, &mut self.next_notifications, &self.scripts);
+        for event in events {
+            self.process_event(event);
+        }
 
         let commands_buffer = self.actors.get_commands();
         for command in commands_buffer {
@@ -392,6 +395,24 @@ impl Instance {
         debug!("Notifications: {:?}", self.next_notifications);
         self.prev_notifications.clear();
         mem::swap(&mut self.prev_notifications, &mut self.next_notifications);
+    }
+
+    fn process_event(&mut self, event: TickEvent) {
+        match event {
+            TickEvent::EntityDeath(dead_entity) => {
+                self.next_notifications.push(Notification::Death {
+                    entity: dead_entity.get_id().as_u64(),
+                });
+
+                // Trick to make sarosa make the entity disappear
+                // Should not be needed when the client is modified to handle death properly
+                // (animation etc)
+                self.next_notifications.push(Notification::EntityHasQuit {
+                    entity: dead_entity.get_id().as_u64(),
+                });
+                // TODO: Send entity back to actor
+            }
+        }
     }
 
     fn add_fake_ai(&mut self, class: Id<Monster>, x: f32, y: f32) -> Id<Entity> {
@@ -458,6 +479,10 @@ impl Display for Instance {
     }
 }
 
+/// A list of things that can happen during tick calculation, which require work from the instance
+pub enum TickEvent {
+    EntityDeath(Entity),
+}
 /// Regular or delayed operations that will execute on an Instance
 pub enum InstanceTick {
     /// The main operation will be calculating the next tick
