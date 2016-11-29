@@ -16,7 +16,7 @@ Usage:
 Options:
     -c URL, --configuration URL     URL of the configuration server [default: http://localhost:9000]
     -p PORT, --port PORT            Listening port [default: 7777]
-    -t TICK, --tick TICK            Server tick duration in s [default: 0.05]
+    -t TICK, --tick TICK            Server tick duration in ms [default: 50]
     -h, --help                      Prints this message
 "#;
 
@@ -38,7 +38,7 @@ fn main() {
     let parameters = GameParameters {
         port: args.flag_port,
         configuration_url: args.flag_configuration.clone(),
-        tick_duration: args.flag_tick,
+        tick_duration: args.flag_tick / 1000.0,
     };
     let _request = Game::spawn_game(parameters);
     println!("Started game with parameters {:#?}", args);
