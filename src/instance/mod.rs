@@ -155,6 +155,7 @@ pub struct Instance {
     created_at: Tm,
 
     tick_duration: f32,
+    tick_id: u64,
 }
 
 impl Instance {
@@ -239,6 +240,7 @@ impl Instance {
             trees: trees,
             shutting_down: false,
             created_at: time::now_utc(),
+            tick_id: 0,
         };
 
         // XXX Fake an AI on the map
@@ -380,7 +382,13 @@ impl Instance {
                                    &mut self.next_notifications,
                                    &self.prev_notifications);
 
-        let events = entity::update(&mut self.entities, &mut self.next_notifications, &self.scripts, self.tick_duration);
+        let events = entity::update(
+            &mut self.entities,
+            &mut self.next_notifications,
+            &self.scripts,
+            self.tick_id,
+            self.tick_duration,
+            );
         for event in events {
             self.process_event(event);
         }
@@ -393,6 +401,7 @@ impl Instance {
         debug!("Notifications: {:?}", self.next_notifications);
         self.prev_notifications.clear();
         mem::swap(&mut self.prev_notifications, &mut self.next_notifications);
+        self.tick_id += 1;
     }
 
     fn process_event(&mut self, event: TickEvent) {

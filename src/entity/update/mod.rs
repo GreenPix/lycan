@@ -26,6 +26,7 @@ pub fn update(
     entities: &mut EntityStore,
     notifications: &mut Vec<Notification>,
     scripts: &AaribaScripts,
+    tick_id: u64,
     tick_duration: f32,
     ) -> Vec<TickEvent> {
     // During a tick, every event that can affect an entity (an entity attacking, a spell cast,
@@ -40,22 +41,22 @@ pub fn update(
     let mut tick_events = Vec::new();
     movement::resolve_movements(entities, notifications, tick_duration);
     attacks::resolve_attacks(entities, notifications, scripts, &mut tick_events, tick_duration);
-    generate_position_updates(entities, notifications);
+    generate_position_updates(entities, notifications, tick_id);
     tick_events
 }
 
 fn generate_position_updates(
     entities: &EntityStore,
     notifications: &mut Vec<Notification>,
+    tick_id: u64,
     ) {
-    for entity in entities.iter() {
-        let notif = Notification::position(
-            entity.get_id().as_u64(),
-            entity.position,
-            entity.speed,
-            entity.pv,
-            );
-        notifications.push(notif);
-    }
+    let entities_updates = entities.iter()
+        .map(|e| e.to_entity_update())
+        .collect();
+    let notif = Notification::GameUpdate {
+        tick_id: tick_id,
+        entities: entities_updates,
+    };
+    notifications.push(notif);
 }
 

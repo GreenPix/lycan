@@ -86,6 +86,14 @@ impl Request {
     }
 }
 
+#[derive(Debug,Clone,Copy)]
+pub struct EntityUpdate {
+    pub entity_id: u64,
+    pub position: Point2<f32>,
+    pub speed: Vector2<f32>,
+    pub pv: u64,
+}
+
 #[derive(Debug,Clone)]
 pub enum Notification {
     Walk {
@@ -96,11 +104,9 @@ pub enum Notification {
         entity: u64,
         message: String,
     },
-    Position {
-        entity: u64,
-        position: Point2<f32>,
-        speed: Vector2<f32>,
-        pv: u64,
+    GameUpdate {
+        tick_id: u64,
+        entities: Vec<EntityUpdate>,
     },
     ThisIsYou {
         entity: u64,
@@ -138,15 +144,6 @@ impl Notification {
         Notification::Say {
             entity: id,
             message: message,
-        }
-    }
-
-    pub fn position(id: u64, position: Point2<f32>, speed: Vector2<f32>, pv: u64) -> Notification {
-        Notification::Position {
-            entity: id,
-            position: position,
-            speed: speed,
-            pv: pv,
         }
     }
 

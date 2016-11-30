@@ -1,10 +1,13 @@
-use lycan_serialize::Notification as NetworkNotification;
-use lycan_serialize::Order as NetworkOrder;
-use lycan_serialize::EntityOrder as NetworkEntityOrder;
-use lycan_serialize::Command as NetworkCommand;
-use lycan_serialize::GameCommand as NetworkGameCommand;
-use lycan_serialize::Direction;
-use lycan_serialize::Vec2d;
+use lycan_serialize::{
+    Notification as NetworkNotification,
+    Order as NetworkOrder,
+    EntityOrder as NetworkEntityOrder,
+    Command as NetworkCommand,
+    GameCommand as NetworkGameCommand,
+    EntityUpdate as NetworkEntityUpdate,
+    Direction,
+    Vec2d,
+};
 
 use std::fmt::{self,Formatter,Debug};
 use std::boxed::FnBox;
@@ -13,37 +16,19 @@ use entity::{Entity};
 use game::Game;
 use id::Id;
 use instance::{Instance,ShuttingDownState};
-use super::{GameCommand,Order,EntityOrder,Command,Notification};
+use super::{
+    GameCommand,
+    Order,
+    EntityOrder,
+    Command,
+    Notification,
+    EntityUpdate,
+};
 
-/*
-impl From<NetworkOrder> for Order {
-    fn from(net: NetworkOrder) -> Order {
-        unimplemented!();
-    }
-}
-
-impl From<NetworkEntityOrder> for EntityOrder {
-    fn from(net: NetworkEntityOrder) -> EntityOrder {
-        unimplemented!();
-    }
-}
-
-
-impl From<NetworkGameCommand> for GameCommand {
-    fn from(net: NetworkGameCommand) -> GameCommand {
-        unimplemented!();
-    }
-}
-
-impl From<NetworkCommand> for Command {
-    fn from(net: NetworkCommand) -> Command {
-        unimplemented!();
-    }
-}
-
-*/
-
-// TODO REMOVE
+// Conversion between internal notifications and notifications sent on the network
+// Is this separation always needed?
+//
+// Return an option, in case the network part is not up to date (so we don't break clients)
 impl Into<Option<NetworkNotification>> for Notification {
     fn into(self) -> Option<NetworkNotification> {
         match self {
@@ -51,11 +36,11 @@ impl Into<Option<NetworkNotification>> for Notification {
                 Some(NetworkNotification::walk(entity,orientation)),
             Notification::Say{entity,message} =>
                 Some(NetworkNotification::say(entity,message)),
-            Notification::Position{entity,position,speed,pv} =>
-                Some(NetworkNotification::position(entity,
-                                                   Vec2d{x: position.x, y: position.y},
-                                                   Vec2d{x: speed.x, y: speed.y},
-                                                   pv)),
+            Notification::GameUpdate{tick_id,entities} =>
+                Some(NetworkNotification::GameUpdate {
+                    tick_id: tick_id,
+                    entities: entities.into_iter().map(|e| e.into()).collect(),
+                }),
             Notification::ThisIsYou{entity} =>
                 Some(NetworkNotification::this_is_you(entity)),
             Notification::NewEntity{entity,position,skin,pv} =>
@@ -65,14 +50,36 @@ impl Into<Option<NetworkNotification>> for Notification {
                                                      pv)),
             Notification::EntityHasQuit{entity} => 
                 Some(NetworkNotification::entity_has_quit(entity)),
-            Notification::Damage{..} => {
-                // XXX: Need to send that to the network
-                None
+            Notification::Damage{source, victim, amount} => {
+                Some(NetworkNotification::Damage {
+                    source: source,
+                    victim: victim,
+                    amount: amount,
+                })
             }
-            Notification::Death{..} => {
-                // XXX: Need to send that to the network
-                None
+            Notification::Death{entity} => {
+                Some(NetworkNotification::Death {
+                    entity: entity,
+                })
             }
+        }
+    }
+}
+
+impl Into<NetworkEntityUpdate> for EntityUpdate {
+    fn into(self) -> NetworkEntityUpdate {
+        // Destructuration so we don't forget to send some things to the network
+        let EntityUpdate {
+            entity_id,
+            position,
+            speed,
+            pv,
+        } = self;
+        NetworkEntityUpdate {
+            entity_id: entity_id,
+            position: Vec2d { x: position.x, y: position.y },
+            speed: Vec2d { x: speed.x, y: speed.y },
+            pv: pv,
         }
     }
 }

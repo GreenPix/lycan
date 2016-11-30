@@ -14,7 +14,11 @@ use data::{
     Monster,
 };
 use data::UNIQUE_MAP;
-use messages::{EntityState, Notification};
+use messages::{
+    EntityState,
+    Notification,
+    EntityUpdate,
+};
 use instance::Instance;
 use actor::ActorId;
 
@@ -415,6 +419,14 @@ impl Entity {
         EntityState::new(self.id, self.position, self.orientation)
     }
 
+    pub fn to_entity_update(&self) -> EntityUpdate {
+        EntityUpdate {
+            entity_id: self.id.as_u64(),
+            position: self.position,
+            speed: self.speed,
+            pv: self.pv,
+        }
+    }
 }
 
 ///////////////////////////////////////////////
