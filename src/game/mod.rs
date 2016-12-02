@@ -96,7 +96,6 @@ impl Game {
             );
 
         // XXX: Hacks
-        game.authentication_manager.fake_authentication_tokens();
         let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
         game.map_instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
         // End hacks

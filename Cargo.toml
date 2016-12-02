@@ -31,7 +31,7 @@ tokio-core = "0.1"
 schedule_recv = "0.1"
 
 # Iron and related crates
-iron = "0.4"
+iron = { version = "0.4", features = ["ssl"] }
 mount = "0.2.0"
 router = "0.4"
 bodyparser = "0.4"
@@ -56,6 +56,6 @@ name = "lycan"
 doc = false
 
 [features]
-json = ["lycan-serialize/json"]
+debug = []
 
-default = ["json", "iron/ssl"]
+default = ["debug"]
