@@ -172,6 +172,12 @@ impl Notification {
     }
 }
 
+/// Commands sent by the Game to an actor directly, usually for management purposes
+pub enum ActorCommand {
+    /// Kick the player from the game
+    Kick,
+}
+
 /*
 #[derive(Debug)]
 pub struct EntityOrder {
