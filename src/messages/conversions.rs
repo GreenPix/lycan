@@ -43,12 +43,13 @@ impl Into<Option<NetworkNotification>> for Notification {
                 }),
             Notification::ThisIsYou{entity} =>
                 Some(NetworkNotification::this_is_you(entity)),
-            Notification::NewEntity{entity,position,skin,pv} =>
+            Notification::NewEntity{entity,position,skin,pv,nominal_speed} =>
                 Some(NetworkNotification::new_entity(entity,
                                                      Vec2d{x: position.x, y: position.y},
                                                      skin,
-                                                     pv)),
-            Notification::EntityHasQuit{entity} => 
+                                                     pv,
+                                                     nominal_speed)),
+            Notification::EntityHasQuit{entity} =>
                 Some(NetworkNotification::entity_has_quit(entity)),
             Notification::Damage{source, victim, amount} => {
                 Some(NetworkNotification::Damage {

@@ -116,6 +116,7 @@ pub enum Notification {
         position: Point2<f32>,
         skin: u64,
         pv: u64,
+        nominal_speed: f32,
     },
     EntityHasQuit {
         entity: u64,
@@ -153,12 +154,13 @@ impl Notification {
         }
     }
 
-    pub fn new_entity(id: u64, position: Point2<f32>, skin: u64, pv: u64) -> Notification {
+    pub fn new_entity(id: u64, position: Point2<f32>, skin: u64, pv: u64, nominal_speed: f32) -> Notification {
         Notification::NewEntity {
             entity: id,
             position: position,
             skin: skin,
             pv: pv,
+            nominal_speed: nominal_speed,
         }
     }
 

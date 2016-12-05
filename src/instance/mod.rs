@@ -288,7 +288,8 @@ impl Instance {
             let skin = entity.get_skin();
             let entity_id = entity.get_id().as_u64();
             let pv = entity.get_pv();
-            let notification = Notification::new_entity(entity_id, position, skin, pv);
+            let ns = entity.get_nominal_speed();
+            let notification = Notification::new_entity(entity_id, position, skin, pv, ns);
             actor.send_message(notification);
         }
         for entity in entities {
@@ -296,7 +297,8 @@ impl Instance {
             let position = entity.get_position();
             let skin = entity.get_skin();
             let pv = entity.get_pv();
-            let notification = Notification::new_entity(entity_id, position, skin, pv);
+            let ns = entity.get_nominal_speed();
+            let notification = Notification::new_entity(entity_id, position, skin, pv, ns);
             self.next_notifications.push(notification);
             self.entities.push(entity);
         }
@@ -358,10 +360,11 @@ impl Instance {
         let position = entity.get_position();
         let skin = entity.get_skin();
         let pv = entity.get_pv();
+        let ns = entity.get_nominal_speed();
         if self.actors.assign_entity_to_actor(id, entity_id) {
             entity.set_actor(Some(id));
             self.entities.push(entity);
-            let notification = Notification::new_entity(entity_id.as_u64(), position, skin, pv);
+            let notification = Notification::new_entity(entity_id.as_u64(), position, skin, pv, ns);
             self.next_notifications.push(notification);
         } else {
             // Could be normal operation if the actor has just been unregistered (race
