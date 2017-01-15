@@ -155,6 +155,7 @@ pub struct Instance {
     created_at: Tm,
 
     tick_duration: f32,
+    tick_id: u64,
 }
 
 impl Instance {
@@ -239,6 +240,7 @@ impl Instance {
             trees: trees,
             shutting_down: false,
             created_at: time::now_utc(),
+            tick_id: 0,
         };
 
         // XXX Fake an AI on the map
@@ -286,7 +288,8 @@ impl Instance {
             let skin = entity.get_skin();
             let entity_id = entity.get_id().as_u64();
             let pv = entity.get_pv();
-            let notification = Notification::new_entity(entity_id, position, skin, pv);
+            let ns = entity.get_nominal_speed();
+            let notification = Notification::new_entity(entity_id, position, skin, pv, ns);
             actor.send_message(notification);
         }
         for entity in entities {
@@ -294,7 +297,8 @@ impl Instance {
             let position = entity.get_position();
             let skin = entity.get_skin();
             let pv = entity.get_pv();
-            let notification = Notification::new_entity(entity_id, position, skin, pv);
+            let ns = entity.get_nominal_speed();
+            let notification = Notification::new_entity(entity_id, position, skin, pv, ns);
             self.next_notifications.push(notification);
             self.entities.push(entity);
         }
@@ -356,10 +360,11 @@ impl Instance {
         let position = entity.get_position();
         let skin = entity.get_skin();
         let pv = entity.get_pv();
+        let ns = entity.get_nominal_speed();
         if self.actors.assign_entity_to_actor(id, entity_id) {
             entity.set_actor(Some(id));
             self.entities.push(entity);
-            let notification = Notification::new_entity(entity_id.as_u64(), position, skin, pv);
+            let notification = Notification::new_entity(entity_id.as_u64(), position, skin, pv, ns);
             self.next_notifications.push(notification);
         } else {
             // Could be normal operation if the actor has just been unregistered (race
@@ -380,7 +385,13 @@ impl Instance {
                                    &mut self.next_notifications,
                                    &self.prev_notifications);
 
-        let events = entity::update(&mut self.entities, &mut self.next_notifications, &self.scripts, self.tick_duration);
+        let events = entity::update(
+            &mut self.entities,
+            &mut self.next_notifications,
+            &self.scripts,
+            self.tick_id,
+            self.tick_duration,
+            );
         for event in events {
             self.process_event(event);
         }
@@ -393,6 +404,7 @@ impl Instance {
         debug!("Notifications: {:?}", self.next_notifications);
         self.prev_notifications.clear();
         mem::swap(&mut self.prev_notifications, &mut self.next_notifications);
+        self.tick_id += 1;
     }
 
     fn process_event(&mut self, event: TickEvent) {

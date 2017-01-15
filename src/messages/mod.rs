@@ -86,6 +86,14 @@ impl Request {
     }
 }
 
+#[derive(Debug,Clone,Copy)]
+pub struct EntityUpdate {
+    pub entity_id: u64,
+    pub position: Point2<f32>,
+    pub speed: Vector2<f32>,
+    pub pv: u64,
+}
+
 #[derive(Debug,Clone)]
 pub enum Notification {
     Walk {
@@ -96,11 +104,9 @@ pub enum Notification {
         entity: u64,
         message: String,
     },
-    Position {
-        entity: u64,
-        position: Point2<f32>,
-        speed: Vector2<f32>,
-        pv: u64,
+    GameUpdate {
+        tick_id: u64,
+        entities: Vec<EntityUpdate>,
     },
     ThisIsYou {
         entity: u64,
@@ -110,6 +116,7 @@ pub enum Notification {
         position: Point2<f32>,
         skin: u64,
         pv: u64,
+        nominal_speed: f32,
     },
     EntityHasQuit {
         entity: u64,
@@ -141,27 +148,19 @@ impl Notification {
         }
     }
 
-    pub fn position(id: u64, position: Point2<f32>, speed: Vector2<f32>, pv: u64) -> Notification {
-        Notification::Position {
-            entity: id,
-            position: position,
-            speed: speed,
-            pv: pv,
-        }
-    }
-
     pub fn this_is_you(id: u64) -> Notification {
         Notification::ThisIsYou {
             entity: id,
         }
     }
 
-    pub fn new_entity(id: u64, position: Point2<f32>, skin: u64, pv: u64) -> Notification {
+    pub fn new_entity(id: u64, position: Point2<f32>, skin: u64, pv: u64, nominal_speed: f32) -> Notification {
         Notification::NewEntity {
             entity: id,
             position: position,
             skin: skin,
             pv: pv,
+            nominal_speed: nominal_speed,
         }
     }
 
