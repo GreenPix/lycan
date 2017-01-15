@@ -121,11 +121,7 @@ impl Entity {
 
     // Takes effects into account
     pub fn recompute_current_stats(&mut self) {
-        let speed = match self.e_type {
-            EntityType::Player(_) => DEFAULT_SPEED,
-            EntityType::Monster(_) => DEFAULT_AI_SPEED,
-        };
-        self.stats.speed = speed;
+        self.stats.speed = self.get_nominal_speed();
         self.stats.strength = self.base_stats.strength;
         self.stats.dexterity = self.base_stats.dexterity;
         self.stats.constitution = self.base_stats.constitution;
@@ -245,6 +241,14 @@ impl Entity {
 
     pub fn get_pv(&self) -> u64 {
         self.pv
+    }
+
+    pub fn get_nominal_speed(&self) -> f32 {
+        // For now there is a different (hardcoded) speed for monsters and players
+        match self.e_type {
+            EntityType::Player(_) => DEFAULT_SPEED,
+            EntityType::Monster(_) => DEFAULT_AI_SPEED,
+        }
     }
 
     pub fn get_orientation(&self) -> Direction {
