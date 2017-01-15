@@ -83,41 +83,44 @@ impl Game {
         }
     }
 
-    pub fn spawn_game(parameters: GameParameters) -> Result<Sender<Request>,io::Error> {
-        let scripts = AaribaScripts::get_from_url(&parameters.configuration_url).unwrap();
-        let behaviour_trees = BehaviourTrees::get_from_url(&parameters.configuration_url).unwrap();
-
-        let (sender, rx) = mpsc::channel();
-
-        let ip = net::IpAddr::V4(Ipv4Addr::new(0,0,0,0));
-        let addr = SocketAddr::new(ip,parameters.port);
-        network::start_server(addr, sender.clone());
-
-        management::start_management_api(sender.clone());
-        let mut game = Game::new(
-            scripts,
-            behaviour_trees,
-            sender.clone(),
-            parameters.configuration_url.clone(),
-            parameters.tick_duration,
-            );
-
-        // XXX: Hacks
-        let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
-        game.map_instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
-        // End hacks
-
+    pub fn spawn_game(parameters: GameParameters) -> Result<Sender<Request>,()> {
+        let (tx1, rx1) = mpsc::channel();
         thread::spawn(move || {
+            let scripts = AaribaScripts::get_from_url(&parameters.configuration_url).unwrap();
+            let behaviour_trees = BehaviourTrees::get_from_url(&parameters.configuration_url).unwrap();
+
+            let (sender2, rx2) = mpsc::channel();
+
+            let ip = net::IpAddr::V4(Ipv4Addr::new(0,0,0,0));
+            let addr = SocketAddr::new(ip,parameters.port);
+            network::start_server(addr, sender2.clone());
+
+            management::start_management_api(sender2.clone());
+            let mut game = Game::new(
+                scripts,
+                behaviour_trees,
+                sender2.clone(),
+                parameters.configuration_url.clone(),
+                parameters.tick_duration,
+                );
+
+            // XXX: Hacks
+            let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
+            game.map_instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
+            // End hacks
+            tx1.send(sender2).unwrap();
+
             // This is the "event loop"
             debug!("Started game");
-            for request in rx {
+            for request in rx2 {
                 if game.apply(request) {
                     break;
                 }
             }
             debug!("Stopping game");
         });
-        Ok(sender)
+
+        rx1.recv().map_err(|_| ())
     }
 
     // Returns true to exit the loop
