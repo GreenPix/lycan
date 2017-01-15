@@ -14,7 +14,12 @@ use id::{Id,HasId,WeakId};
 use data::{Player,Map,EntityManagement,EntityType};
 use data::UNIQUE_MAP;
 use entity::{Entity};
-use messages::{Command,Request,Notification};
+use messages::{
+    Command,
+    Request,
+    Notification,
+    ActorCommand,
+};
 use network;
 use scripts::{AaribaScripts,BehaviourTrees};
 
@@ -41,6 +46,7 @@ pub struct Game {
     // Keep track of all instances still alive
     instances: HashMap<Id<Instance>, InstanceRef>,
     players: HashMap<Id<Player>, EntityManagement>,
+    players_ref: HashMap<Id<Player>, Sender<ActorCommand>>,
     resource_manager: ResourceManager,
     authentication_manager: AuthenticationManager,
     sender: Sender<Request>,
@@ -65,6 +71,7 @@ impl Game {
             map_instances: HashMap::new(),
             instances: HashMap::new(),
             players: HashMap::new(),
+            players_ref: HashMap::new(),
             sender: sender.clone(),
             authentication_manager: AuthenticationManager::new(),
             resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS, sender, base_url),
@@ -96,7 +103,6 @@ impl Game {
             );
 
         // XXX: Hacks
-        game.authentication_manager.fake_authentication_tokens();
         let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
         game.map_instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
         // End hacks
@@ -164,10 +170,42 @@ impl Game {
                     // Drop the client
                 } else {
                     let player_id = Id::forge(client.uuid);
+
                     // TODO: Generate earlier? (during the connexion, in the network code)
                     let client_id = Id::new();
-                    let actor = NetworkActor::new(client_id, client);
-                    self.player_ready(actor, player_id);
+
+                    let (tx, rx) = mpsc::channel();
+                    let actor = NetworkActor::new(client_id, client, rx);
+                    if let Some(old_actor) = self.players_ref.insert(player_id, tx) {
+                        // This is the case where a client tries to reconnect with the ID
+                        // of a character already in the game
+                        //
+                        // In this case, we should kick the client associated with that ID,
+                        // and replace it with this new client.
+                        //
+                        // However, it can also happen that the client currently in game is
+                        // actually leaving already, or will start to leave shortly (yay 
+                        // asynchronicity!) and the two messages (kick/replace, and actor+entity)
+                        // will cross each other.
+                        //
+                        // We thus need to make sure that, whatever the case we are in, the
+                        // newly connected client will eventually get connected to the right
+                        // entity, and that no two entities have the same player ID at the
+                        // same time
+
+                        // TODO: Unimplemented ...
+                        error!("Unimplemented multiple connections for same player ID {}", player_id);
+                        // For now kick both clients
+                        // This will however break Sarosa in Authentication-less mode (the client
+                        // will not know why it has been kicked)
+                        drop(actor);
+                        let _ = old_actor.send(ActorCommand::Kick);
+                        // Note: the Sender<ActorCommand> will be invalid (we just dropped the
+                        // newly-created associated actor) but this should not cause any problems
+                        // It should get removed when the connected entity comes back
+                    } else {
+                        self.player_ready(actor, player_id);
+                    }
                 }
             }
         }
@@ -255,6 +293,9 @@ impl Game {
         let player: Option<Player> = entity.into();
         if let Some(player) = player {
             self.players.remove(&player.id);
+
+            // Make sure this handles double-connexion problems
+            self.players_ref.remove(&player.id);
 
             let path = format!("./scripts/entities/{}", player.id);
             utils::serialize_to_file(path, &player);

@@ -1,10 +1,19 @@
 use std::fmt::{self,Formatter,Display};
 use std::io::{self,Write,Error};
 use std::collections::{hash_set,HashSet,HashMap};
+use std::sync::mpsc::{
+    Receiver,
+    TryRecvError,
+};
 
 use id::{self,Id,HasId};
 use entity::{Entity,EntityStore};
-use messages::{self,Command,Notification,EntityOrder};
+use messages::{
+    Command,
+    Notification,
+    EntityOrder,
+    ActorCommand,
+};
 use messages::{NetworkCommand};
 use network::{Client,ClientError};
 use actor::ActorId;
@@ -13,6 +22,8 @@ use actor::ActorId;
 pub struct NetworkActor {
     id: ActorId,
     entities: HashSet<Id<Entity>>,
+    game_receiver: Receiver<ActorCommand>,
+
     // XXX Does this belong here?
     client: Client,
     commands: CommandBuffer,
@@ -42,16 +53,33 @@ impl NetworkActor {
         self.entities.insert(entity);
     }
 
-    pub fn new(id: ActorId, client: Client) -> NetworkActor {
+    pub fn new(id: ActorId, client: Client, receiver: Receiver<ActorCommand>) -> NetworkActor {
         NetworkActor {
             id: id,
             entities: HashSet::new(),
             client: client,
             commands: Default::default(),
+            game_receiver: receiver,
         }
     }
 
     fn receive_commands(&mut self) {
+        // In priority, handle messages coming directly from the game
+        // If the player is kicked, we don't even need to apply orders coming from the network ...
+        loop {
+            match self.game_receiver.try_recv() {
+                Ok(ActorCommand::Kick) => {
+                    self.commands.push(Command::UnregisterActor(self.id));
+                    return;
+                }
+                Err(TryRecvError::Empty) => break,
+                Err(TryRecvError::Disconnected) => {
+                    // This really should never happen ...
+                    error!("receive_commands(): the game has hung up!");
+                    return;
+                }
+            }
+        }
         loop {
             match self.client.recv() {
                 Ok(Some(NetworkCommand::EntityOrder(order))) => {

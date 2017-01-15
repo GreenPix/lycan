@@ -3,6 +3,14 @@ Lycan
 
 Lycan is the game engine of the Renaissance project
 
+## Compiling
+
+Lycan currently requires a nightly compiler. You will also need the following packages:
+
+```bash
+sudo apt-get install -y gcc libssl-dev
+```
+
 ## Start an instance
 
 To start an instance of Lycan, you first need to start a http server to deliver
