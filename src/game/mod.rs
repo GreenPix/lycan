@@ -4,7 +4,7 @@ use std::thread;
 use std::io;
 use std::boxed::FnBox;
 use std::sync::mpsc::{Receiver,Sender};
-use std::rc::Rc;
+use std::rc::{Rc,Weak};
 use std::cell::RefCell;
 use std::sync::mpsc as std_mpsc;
 
@@ -49,6 +49,7 @@ pub struct GameParameters {
 }
 
 pub struct Game {
+    maps: HashMap<Id<Map>, Map>,
     // Keep track of all _active_ (not shuting down) instances, indexed by map ID
     map_instances: HashMap<Id<Map>, HashMap<Id<Instance>, InstanceRef>>,
     // Keep track of all instances still alive
@@ -59,9 +60,9 @@ pub struct Game {
     authentication_manager: AuthenticationManager,
     sender: UnboundedSender<Request>,
     tick_duration: f32,
-    callbacks: Callbacks,
     shutdown: bool,
     handle: Handle,
+    game_ref: Option<Weak<RefCell<Game>>>,
 
     // TODO: Should this be integrated with the resource manager?
     scripts: AaribaScripts,
@@ -78,19 +79,20 @@ impl Game {
         handle: Handle,
         ) -> Game {
         Game {
+            maps: HashMap::new(),
             map_instances: HashMap::new(),
             instances: HashMap::new(),
             players: HashMap::new(),
             players_ref: HashMap::new(),
             sender: sender.clone(),
             authentication_manager: AuthenticationManager::new(),
-            resource_manager: ResourceManager::new(RESOURCE_MANAGER_THREADS, sender, base_url),
+            resource_manager: ResourceManager::new_rest(base_url),
             tick_duration: tick_duration,
-            callbacks: Callbacks::new(),
             shutdown: false,
             scripts: scripts,
             trees: trees,
             handle: handle,
+            game_ref: None,
         }
     }
 
@@ -118,15 +120,22 @@ impl Game {
                 );
 
             // XXX: Hacks
-            let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
+            //let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
             game.map_instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
+            game.maps.insert(UNIQUE_MAP.get_id(), UNIQUE_MAP.clone());
             // End hacks
             tx1.send(sender2).unwrap();
 
             let game = Rc::new(RefCell::new(game));
+            {
+                let weak_game = Rc::downgrade(&game);
+                let mut game_ref = game.borrow_mut();
+                (*game_ref).game_ref = Some(weak_game);
+            }
 
             let game_clone = game.clone();
             let fut = rx2.for_each(move |request| {
+                // TODO: A way to stop this loop ...
                 let mut game_ref = game_clone.borrow_mut();
                 game_ref.apply(request);
                 Ok(())
@@ -134,7 +143,7 @@ impl Game {
 
             debug!("Started game");
             // This should never return
-            core.run(fut);
+            core.run(fut).unwrap();
 
             debug!("Stopping game");
         });
@@ -169,12 +178,6 @@ impl Game {
 
                 if self.shutdown && self.instances.is_empty() {
                     return true;
-                }
-            }
-            Request::JobFinished(job) => {
-                let callbacks = self.callbacks.get_callbacks(job);
-                for cb in callbacks {
-                    cb.call_box((self,));
                 }
             }
             Request::PlayerUpdate(players) => {
@@ -291,24 +294,24 @@ impl Game {
     }
 
     fn player_ready(&mut self, mut actor: NetworkActor, id: Id<Player>) {
-        match self.resource_manager.retrieve_player(id) {
-            Ok(entity) => {
+        use self::resource_manager::ResultExt;
+
+        let game_ref = self.game_ref.clone().unwrap();
+        let fut = self.resource_manager.get_player(id)
+            .and_then(move |entity| {
                 let map = entity.get_map_position().unwrap();
                 actor.register_entity(entity.get_id());
                 let notification = Notification::this_is_you(entity.get_id().as_u64());
                 actor.send_message(notification);
-                self.assign_actor_to_map(map, actor, vec![entity]);
-            }
-            Err(Error::Processing(job)) => {
-                self.callbacks.add(job, move |game| {
-                    game.player_ready(actor, id);
-                });
-            }
-            Err(Error::NotFound) => {
-                //TODO
-                unimplemented!();
-            }
-        }
+                let game_ref = game_ref.upgrade().ok_or_else(|| "Upgrading Weak to Rc failed")?;
+                let mut game = game_ref.borrow_mut();
+                game.assign_actor_to_map(map, actor, vec![entity]);
+                Ok(())
+            }).map_err(|e| {
+                error!("Error while processing player: {}", e);
+            });
+
+        self.handle.spawn(fut);
     }
 
     fn entity_leaving(&mut self, entity: Entity) {
@@ -326,11 +329,15 @@ impl Game {
 
     fn connect_character(&mut self, id: Id<Player>, token: AuthenticationToken) {
         self.authentication_manager.add_token(id, token);
-        self.resource_manager.load_player(id);
+        //self.resource_manager.load_player(id);
     }
 
     pub fn verify_token(&mut self, id: Id<Player>, token: AuthenticationToken) -> bool {
         self.authentication_manager.verify_token(id, token)
+    }
+
+    fn get_active_maps(&self) -> Vec<Map> {
+        self.maps.values().cloned().collect()
     }
 }
 

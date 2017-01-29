@@ -27,6 +27,7 @@ serde = "0.8"
 serde_json = "0.8"
 uuid = { version = "0.3", features = ["rand","serde"] }
 futures = "0.1"
+futures-cpupool = "0.1.2"
 tokio-core = "0.1"
 schedule_recv = "0.1"
 error-chain = "0.8"

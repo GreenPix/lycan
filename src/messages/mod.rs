@@ -72,9 +72,6 @@ pub enum Request {
     },
     InstanceShuttingDown(ShuttingDownState),
     PlayerUpdate(Vec<EntityManagement>),
-
-    // Callback from ResourceManager
-    JobFinished(usize),
 }
 
 impl Request {

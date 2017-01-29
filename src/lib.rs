@@ -24,6 +24,7 @@ extern crate serde;
 extern crate serde_json;
 extern crate uuid;
 extern crate futures;
+extern crate futures_cpupool;
 extern crate tokio_core;
 extern crate schedule_recv;
 #[macro_use] extern crate error_chain;

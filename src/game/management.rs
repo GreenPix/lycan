@@ -141,7 +141,7 @@ fn create_router(sender: UnboundedSender<LycanRequest>) -> Router {
         "/maps",
         correct_bounds(move |_request| {
         let maps_inner = define_request!(clone, |game| {
-            game.resource_manager.get_all_maps()
+            game.get_active_maps()
         });
         let maps: Vec<_> = maps_inner.into_iter()
                                      .map(|m| GetMaps { uuid: m.get_id(), name: m.name.clone() })
