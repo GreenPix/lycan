@@ -4,6 +4,7 @@ use std::sync::mpsc::{self,Sender,Receiver};
 use std::fmt::{self,Write};
 use std::hash::Hash;
 
+use futures::sync::mpsc::UnboundedSender;
 use threadpool::ThreadPool;
 use serde_json;
 
@@ -18,7 +19,7 @@ use messages::Request;
 pub struct ResourceManager {
     maps: ResourceManagerInner<Map,Arc<Map>>,
     players: ResourceManagerInner<Player,Entity>,
-    requests: Sender<Request>,
+    requests: UnboundedSender<Request>,
     pool: ThreadPool,
     job: usize,
     base_url: String,
@@ -28,7 +29,7 @@ struct ResourceManagerInner<T: HasId,U> {
     resources: HashMap<Id<T>, U>,
     errors: HashMap<Id<T>, Error>,
     jobs: CurrentJobs<T>,
-    requests: Sender<Request>,
+    requests: UnboundedSender<Request>,
 
     // XXX: Maybe a sync receiver would be better here
     tx: Sender  <(Id<T>, Result<U, Error>)>,
@@ -39,7 +40,7 @@ impl <T,U> ResourceManagerInner<T,U>
 where U: RetreiveFromId<T>,
       U: Send + 'static,
       T: HasId + 'static {
-    fn new(requests: Sender<Request>) -> ResourceManagerInner<T,U> {
+    fn new(requests: UnboundedSender<Request>) -> ResourceManagerInner<T,U> {
         let (tx, rx) = mpsc::channel();
         ResourceManagerInner {
             resources: HashMap::new(),
@@ -139,7 +140,7 @@ where U: RetreiveFromId<T>,
 }
 
 impl ResourceManager {
-    pub fn new(threads: usize, requests: Sender<Request>, url: String) -> ResourceManager {
+    pub fn new(threads: usize, requests: UnboundedSender<Request>, url: String) -> ResourceManager {
         ResourceManager {
             maps: ResourceManagerInner::new(requests.clone()),
             players: ResourceManagerInner::new(requests.clone()),

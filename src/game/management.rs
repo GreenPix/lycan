@@ -2,6 +2,7 @@ use std::thread;
 use std::sync::mpsc::{self,Sender};
 use std::error::Error as StdError;
 
+use futures::sync::mpsc::UnboundedSender;
 use serde_json::ser::to_vec_pretty;
 use serde::Serialize;
 use uuid::Uuid;
@@ -30,6 +31,7 @@ use game::Game;
 // mio channels were sync, std lib channels are not
 // Iron need them to be sync
 // For now use a mutex
+/*
 use std::sync::Arc;
 use std::sync::Mutex;
 struct MutexSender<T>(Arc<Mutex<Sender<T>>>);
@@ -49,14 +51,15 @@ impl <T> Clone for MutexSender<T> {
         MutexSender(self.0.clone())
     }
 }
+*/
 
 // TODO
 // - Set correct headers in all responses
 // - Check if correct heahers are set (e.g. Content-Type)
 
-pub fn start_management_api(sender: Sender<LycanRequest>) {
+pub fn start_management_api(sender: UnboundedSender<LycanRequest>) {
     thread::spawn(move || {
-        let sender = MutexSender::new(sender);
+        //let sender = MutexSender::new(sender);
         let router = create_router(sender);
         let mut mount = Mount::new();
         mount.mount("/api/v1", router);
@@ -129,7 +132,7 @@ fn correct_bounds<F>(f: F) -> F
 where F: Send + Sync + 'static + Fn(&mut Request) -> IronResult<Response>
 {f}
 
-fn create_router(sender: MutexSender<LycanRequest>) -> Router {
+fn create_router(sender: UnboundedSender<LycanRequest>) -> Router {
     let mut server = Router::new();
     // TODO: Add middleware at the beginning for authentication of requests
 
@@ -245,7 +248,7 @@ fn create_router(sender: MutexSender<LycanRequest>) -> Router {
         "connect_character");
 
     // Isolated in a function for easier error handling
-    fn entity_delete(sender: &MutexSender<LycanRequest>, request: &mut Request) -> Result<(),String> {
+    fn entity_delete(sender: &UnboundedSender<LycanRequest>, request: &mut Request) -> Result<(),String> {
         let params = request.extensions.get::<Router>().unwrap();
         // id is part of the route, the unwrap should never fail
         let instance_id = {

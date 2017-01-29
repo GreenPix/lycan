@@ -3,7 +3,15 @@ use std::collections::HashMap;
 use std::thread;
 use std::io;
 use std::boxed::FnBox;
-use std::sync::mpsc::{self,Receiver,Sender};
+use std::sync::mpsc::{Receiver,Sender};
+use std::rc::Rc;
+use std::cell::RefCell;
+use std::sync::mpsc as std_mpsc;
+
+use tokio_core::reactor::{Core,Handle};
+use futures::sync::mpsc::{self,UnboundedReceiver,UnboundedSender};
+use futures::future::{self,Future,IntoFuture};
+use futures::Stream;
 
 use lycan_serialize::AuthenticationToken;
 
@@ -49,10 +57,11 @@ pub struct Game {
     players_ref: HashMap<Id<Player>, Sender<ActorCommand>>,
     resource_manager: ResourceManager,
     authentication_manager: AuthenticationManager,
-    sender: Sender<Request>,
+    sender: UnboundedSender<Request>,
     tick_duration: f32,
     callbacks: Callbacks,
     shutdown: bool,
+    handle: Handle,
 
     // TODO: Should this be integrated with the resource manager?
     scripts: AaribaScripts,
@@ -63,9 +72,10 @@ impl Game {
     fn new(
         scripts: AaribaScripts,
         trees: BehaviourTrees,
-        sender: Sender<Request>,
+        sender: UnboundedSender<Request>,
         base_url: String,
         tick_duration: f32,
+        handle: Handle,
         ) -> Game {
         Game {
             map_instances: HashMap::new(),
@@ -80,16 +90,18 @@ impl Game {
             shutdown: false,
             scripts: scripts,
             trees: trees,
+            handle: handle,
         }
     }
 
-    pub fn spawn_game(parameters: GameParameters) -> Result<Sender<Request>,()> {
-        let (tx1, rx1) = mpsc::channel();
+    pub fn spawn_game(parameters: GameParameters) -> Result<UnboundedSender<Request>,()> {
+        let (tx1, rx1) = ::std::sync::mpsc::channel();
         thread::spawn(move || {
+            let mut core = Core::new().unwrap();
             let scripts = AaribaScripts::get_from_url(&parameters.configuration_url).unwrap();
             let behaviour_trees = BehaviourTrees::get_from_url(&parameters.configuration_url).unwrap();
 
-            let (sender2, rx2) = mpsc::channel();
+            let (sender2, rx2) = mpsc::unbounded();
 
             let ip = net::IpAddr::V4(Ipv4Addr::new(0,0,0,0));
             let addr = SocketAddr::new(ip,parameters.port);
@@ -102,6 +114,7 @@ impl Game {
                 sender2.clone(),
                 parameters.configuration_url.clone(),
                 parameters.tick_duration,
+                core.handle(),
                 );
 
             // XXX: Hacks
@@ -110,13 +123,19 @@ impl Game {
             // End hacks
             tx1.send(sender2).unwrap();
 
-            // This is the "event loop"
+            let game = Rc::new(RefCell::new(game));
+
+            let game_clone = game.clone();
+            let fut = rx2.for_each(move |request| {
+                let mut game_ref = game_clone.borrow_mut();
+                game_ref.apply(request);
+                Ok(())
+            });
+
             debug!("Started game");
-            for request in rx2 {
-                if game.apply(request) {
-                    break;
-                }
-            }
+            // This should never return
+            core.run(fut);
+
             debug!("Stopping game");
         });
 
@@ -177,7 +196,7 @@ impl Game {
                     // TODO: Generate earlier? (during the connexion, in the network code)
                     let client_id = Id::new();
 
-                    let (tx, rx) = mpsc::channel();
+                    let (tx, rx) = std_mpsc::channel();
                     let actor = NetworkActor::new(client_id, client, rx);
                     if let Some(old_actor) = self.players_ref.insert(player_id, tx) {
                         // This is the case where a client tries to reconnect with the ID

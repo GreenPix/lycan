@@ -93,7 +93,7 @@ impl ::std::fmt::Debug for Client {
     }
 }
 
-pub fn start_server(addr: SocketAddr, tx: StdSender<Request>) {
+pub fn start_server(addr: SocketAddr, tx: UnboundedSender<Request>) {
     let builder = thread::Builder::new()
         .name("Network Tokio".into());
 
@@ -127,7 +127,7 @@ pub fn start_server(addr: SocketAddr, tx: StdSender<Request>) {
 //
 // It will spawn a task on the even look associated with `handle`, that will drive
 // all the network part for this client
-fn handle_client(socket: TcpStream, handle: &Handle, tx: StdSender<Request>) {
+fn handle_client(socket: TcpStream, handle: &Handle, tx: UnboundedSender<Request>) {
     let framed = socket.framed(LycanCodec::default());
     let (sink, stream) = framed.split();
     let stream = stream.and_then(|command| {
@@ -153,8 +153,8 @@ fn handle_client(socket: TcpStream, handle: &Handle, tx: StdSender<Request>) {
 // player
 fn authenticate_client<S,W>(messages: S,
                             write: W,
-                            tx: StdSender<Request>)
-    -> BoxFuture<(S,W,Uuid,StdSender<Request>), Error>
+                            tx: UnboundedSender<Request>)
+    -> BoxFuture<(S,W,Uuid,UnboundedSender<Request>), Error>
 where S: Stream<Item=NetworkCommand,Error=Error> + Send + 'static,
       W: Sink<SinkItem=NetworkNotification,SinkError=IoError> + Send + 'static
 {
@@ -205,14 +205,14 @@ where S: Stream<Item=NetworkCommand,Error=Error> + Send + 'static,
 // Verifies an authentication token, returns true if the authentication was successful
 fn verify_token(uuid: Uuid,
                 token: AuthenticationToken,
-                tx: StdSender<Request>)
-    -> BoxFuture<(bool,StdSender<Request>),Error> {
+                tx: UnboundedSender<Request>)
+    -> BoxFuture<(bool,UnboundedSender<Request>),Error> {
     let (complete, oneshot) = futures::oneshot();
     let request = Request::new(move |game| {
         complete.complete(game.verify_token(Id::forge(uuid), token));
     });
 
-    let res = tx.send(request);
+    let res = UnboundedSender::send(&tx, request);
     if res.is_err() {
         Err("Game was shutdown or panicked during connection".into()).into_future().boxed()
     } else {
@@ -230,7 +230,7 @@ fn verify_token(uuid: Uuid,
 fn client_connected<S,W>(messages: S,
                          write: W,
                          uuid: Uuid,
-                         sender: StdSender<Request>)
+                         sender: UnboundedSender<Request>)
     -> BoxFuture<(), Error>
 where S: Stream<Item=NetworkCommand,Error=Error> + Send + 'static,
       W: Sink<SinkItem=NetworkNotification,SinkError=IoError> + Send + 'static {
@@ -278,7 +278,7 @@ where S: Stream<Item=NetworkCommand,Error=Error> + Send + 'static,
         receiver: rx1,
     };
     let request = Request::NewClient(client);
-    let fut = if sender.send(request).is_err() {
+    let fut = if UnboundedSender::send(&sender, request).is_err() {
         Err(format!("Could not send client {}", uuid))
     } else {
         Ok(fut)

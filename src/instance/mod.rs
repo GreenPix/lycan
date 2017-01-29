@@ -6,6 +6,7 @@ use std::mem;
 use std::time::Duration as StdDuration;
 use std::sync::mpsc::{self,Receiver,Sender};
 
+use futures::sync::mpsc::{UnboundedSender};
 use time::{self,Duration,SteadyTime,Tm};
 use schedule_recv;
 
@@ -143,7 +144,7 @@ pub struct Instance {
     map_id: Id<Map>,
     entities: EntityStore,
     actors: Actors,
-    request: Sender<Request>,
+    request: UnboundedSender<Request>,
     last_tick: SteadyTime,
     lag: Duration,
     // We will need the previous notifications for AI
@@ -159,7 +160,7 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub fn spawn_instance(request: Sender<Request>,
+    pub fn spawn_instance(request: UnboundedSender<Request>,
                           scripts: AaribaScripts,
                           trees: BehaviourTrees,
                           map_id: Id<Map>,
@@ -217,7 +218,7 @@ impl Instance {
         InstanceRef::new(id, sender, created_at, map_id)
     }
 
-    fn new(request: Sender<Request>,
+    fn new(request: UnboundedSender<Request>,
            scripts: AaribaScripts,
            trees: BehaviourTrees,
            map_id: Id<Map>,
