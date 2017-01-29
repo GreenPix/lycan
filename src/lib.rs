@@ -26,6 +26,7 @@ extern crate uuid;
 extern crate futures;
 extern crate tokio_core;
 extern crate schedule_recv;
+#[macro_use] extern crate error_chain;
 
 // Iron and related crates
 #[macro_use] extern crate iron;

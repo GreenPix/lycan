@@ -29,6 +29,7 @@ uuid = { version = "0.3", features = ["rand","serde"] }
 futures = "0.1"
 tokio-core = "0.1"
 schedule_recv = "0.1"
+error-chain = "0.8"
 
 # Iron and related crates
 iron = { version = "0.4", features = ["ssl"] }
