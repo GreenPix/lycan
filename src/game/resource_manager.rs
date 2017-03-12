@@ -9,11 +9,11 @@ use futures::sync::mpsc::UnboundedSender;
 use futures_cpupool::CpuPool;
 use threadpool::ThreadPool;
 use serde_json;
+use error_chain::ChainedError;
 
 use utils;
 use id::{Id,HasId};
 use data::{Map,Player};
-use data::UNIQUE_MAP;
 use entity::Entity;
 use game::Game;
 use messages::Request;
@@ -26,26 +26,46 @@ pub use self::errors::*;
 
 pub struct ResourceManager {
     inner: Box<Backend>,
+    default_fallback: bool,
 }
 
 impl ResourceManager {
     /// Builds a resource manager that will fetch data from a REST API
-    pub fn new_rest(base_url: String) -> ResourceManager {
+    ///
+    /// default_fallback: if a resource is not found, create a default one
+    pub fn new_rest(base_url: String, default_fallback: bool) -> ResourceManager {
         let backend = Box::new(RestBackend::new(base_url));
         ResourceManager {
             inner: backend,
+            default_fallback: default_fallback,
         }
     }
 
     // TODO: make sure the resource manager does not load the same resource twice
     /// Fetches a map by its ID using the current backend
     pub fn get_map(&mut self, map: Id<Map>) -> BoxFuture<Map, Error> {
-        self.inner.get_map(map)
+        let fut = self.inner.get_map(map);
+        if self.default_fallback {
+            fut.or_else(move |e| {
+                warn!("Error while loading map {}, falling back to default. {}", map, e.display());
+                Ok(Map::default_map(map))
+            }).boxed()
+        } else {
+            fut
+        }
     }
 
     /// Fetches a player by its ID using the current backend
     pub fn get_player(&mut self, player: Id<Player>) -> BoxFuture<Entity, Error> {
-        self.inner.get_player(player)
+        let fut = self.inner.get_player(player);
+        if self.default_fallback {
+            fut.or_else(move |e| {
+                warn!("Error while loading player {}, falling back to default. {}", player, e.display());
+                Ok(Entity::from(Player::default_player(player)))
+            }).boxed()
+        } else {
+            fut
+        }
     }
 }
 

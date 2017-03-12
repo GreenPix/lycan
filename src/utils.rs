@@ -32,3 +32,12 @@ where T: Serialize {
     let mut file = try!(File::create(file));
     serde_json::to_writer_pretty(&mut file, s)
 }
+
+/// Gets a new skin from the global counter
+pub fn get_next_skin() -> u64 {
+    use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
+
+    static NEXT_SKIN: AtomicUsize = ATOMIC_USIZE_INIT;
+
+    NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64
+}

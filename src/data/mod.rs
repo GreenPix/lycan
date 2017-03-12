@@ -24,10 +24,9 @@ pub use self::monster::Monster;
 
 // XXX: Hack to remove ... currently we consider only one map
 lazy_static!{
-    pub static ref UNIQUE_MAP: Map = {
-        let uuid = Uuid::from_fields(42,42,42,&[42,42,42,42,42,42,42,42]).unwrap();
-        let name = "The unique map".to_string();
-        Map::new(Id::forge(uuid), name)
+    pub static ref DEFAULT_MAP_ID: Id<Map> = {
+        let uuid = Uuid::from_fields(0x42424242,0x4242,0x4242,&[0x42,0x42,0x42,0x42,0x42,0x42,0x42,0x42]).unwrap();
+        Id::forge(uuid)
     };
 }
 

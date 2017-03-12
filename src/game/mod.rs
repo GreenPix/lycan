@@ -21,7 +21,6 @@ use instance::{InstanceRef,Instance};
 use actor::{NetworkActor,ActorId};
 use id::{Id,HasId,WeakId};
 use data::{Player,Map,EntityManagement,EntityType};
-use data::UNIQUE_MAP;
 use entity::{Entity};
 use messages::{
     Command,
@@ -44,6 +43,7 @@ pub struct GameParameters {
     pub port: u16,
     pub configuration_url: String,
     pub tick_duration: f32,
+    pub default_fallback: bool,
 }
 
 pub struct Game {
@@ -76,6 +76,7 @@ impl Game {
         base_url: String,
         tick_duration: f32,
         handle: Handle,
+        default_fallback: bool,
         ) -> Game {
         Game {
             maps: ActiveMaps::new(),
@@ -84,7 +85,7 @@ impl Game {
             players_ref: HashMap::new(),
             sender: sender.clone(),
             authentication_manager: AuthenticationManager::new(),
-            resource_manager: ResourceManager::new_rest(base_url),
+            resource_manager: ResourceManager::new_rest(base_url, default_fallback),
             tick_duration: tick_duration,
             shutdown: false,
             scripts: scripts,
@@ -115,6 +116,7 @@ impl Game {
                 parameters.configuration_url.clone(),
                 parameters.tick_duration,
                 core.handle(),
+                parameters.default_fallback,
                 );
 
             tx1.send(sender2).unwrap();

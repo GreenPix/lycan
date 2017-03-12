@@ -1,7 +1,10 @@
 use uuid::Uuid;
 
 use id::{Id,HasForgeableId,HasId};
-use data::Map;
+use data::{
+    Map,
+    DEFAULT_MAP_ID,
+};
 
 // Intended to be all the info needed for that player to go in game
 #[derive(Serialize,Deserialize,Debug,Clone)]
@@ -48,6 +51,38 @@ impl Player {
 
     pub fn get_name(&self) -> &str {
         &self.name
+    }
+
+    /// Used when the "default_fallback" flag is set. It will return a default player, with the given
+    /// uuid
+    pub fn default_player(uuid: Id<Player>) -> Player {
+        let stats = Stats {
+            level:          1,
+            strength:       2,
+            dexterity:      3,
+            constitution:   4,
+            intelligence:   5,
+            precision:      6,
+            wisdom:         7,
+        };
+        let position = Position {
+            x: 0.0,
+            y: 0.0,
+            map: *DEFAULT_MAP_ID
+        };
+        let name = format!("Player {}", uuid);
+        let skin = ::utils::get_next_skin();
+        Player {
+            id:         uuid,
+            name:       name,
+            skin:       skin,
+            current_pv: 100,
+            position:   position,
+            experience: 0,
+            gold:       0,
+            guild:      String::new(),
+            stats:      stats,
+        }
     }
 }
 

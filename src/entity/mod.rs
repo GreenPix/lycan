@@ -13,7 +13,6 @@ use data::{
     EntityType as DataEntityType,
     Monster,
 };
-use data::UNIQUE_MAP;
 use messages::{
     EntityState,
     Notification,
@@ -64,10 +63,6 @@ pub struct Entity {
     // TODO: Replace by a FSM
     walking: bool,
     attacking: AttackState,
-}
-
-lazy_static! {
-    static ref NEXT_SKIN: AtomicUsize = AtomicUsize::new(0);
 }
 
 impl Entity {
@@ -440,37 +435,6 @@ impl Entity {
 //
 
 impl Entity {
-    pub fn fake_player(id: Id<Player>) -> Entity {
-        let stats = Stats {
-            level:          1,
-            strength:       2,
-            dexterity:      3,
-            constitution:   4,
-            intelligence:   5,
-            precision:      6,
-            wisdom:         7,
-        };
-        let position = Position {
-            x: 0.0,
-            y: 0.0,
-            map: UNIQUE_MAP.get_id()
-        };
-        let name = format!("Player {}", id);
-        let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
-        let player = Player {
-            id:         id,
-            name:       name,
-            skin:       skin,
-            current_pv: 100,
-            position:   position,
-            experience: 0,
-            gold:       0,
-            guild:      String::new(),
-            stats:      stats,
-        };
-        Entity::from(player)
-    }
-
     pub fn fake_ai(class: Id<Monster>, x: f32, y: f32) -> Entity {
         let stats = Stats {
             level:          1,
@@ -481,7 +445,7 @@ impl Entity {
             precision:      6,
             wisdom:         7,
         };
-        let skin = NEXT_SKIN.fetch_add(1, Ordering::Relaxed) as u64;
+        let skin = ::utils::get_next_skin();
         let monster = MonsterData {
             class: class,
         };

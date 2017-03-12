@@ -17,6 +17,7 @@ Options:
     -c URL, --configuration URL     URL of the configuration server [default: http://localhost:9000]
     -p PORT, --port PORT            Listening port [default: 7777]
     -t TICK, --tick TICK            Server tick duration in ms [default: 50]
+    --no-fallback                   When an error occurs during resource loading, do not create a sensible default value
     -h, --help                      Prints this message
 "#;
 
@@ -25,6 +26,7 @@ struct Args {
     flag_port: u16,
     flag_configuration: String,
     flag_tick: f32,
+    flag_no_fallback: bool,
 }
 
 fn main() {
@@ -39,6 +41,7 @@ fn main() {
         port: args.flag_port,
         configuration_url: args.flag_configuration.clone(),
         tick_duration: args.flag_tick / 1000.0,
+        default_fallback: !args.flag_no_fallback,
     };
     let _request = Game::spawn_game(parameters);
     println!("Started game with parameters {:#?}", args);
