@@ -65,6 +65,8 @@ pub fn start_management_api(sender: UnboundedSender<LycanRequest>) {
         mount.mount("/api/v1", router);
         let mut chain = Chain::new(mount);
         chain.link_before(AuthenticationMiddleware("abcdefgh".to_string()));
+
+        /*
         let mut error_router = ::iron_error_router::ErrorRouter::new();
         error_router.handle_status(Status::NotFound, |_: &mut Request| {
             Ok(Response::with((Status::NotFound, "404: Not Found")))
@@ -73,6 +75,7 @@ pub fn start_management_api(sender: UnboundedSender<LycanRequest>) {
             Ok(Response::with((Status::Unauthorized, "401: Unauthorized")))
         });
         chain.link_after(error_router);
+        */
 
         let iron = Iron::new(chain);
         iron.http("127.0.0.1:9001").unwrap();

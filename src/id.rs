@@ -240,15 +240,15 @@ where T::Type: Decodable {
 
 impl <T: HasForgeableId> Deserialize for Id<T>
 where T::Type: Deserialize {
-    fn deserialize<D: Deserializer>(d: &mut D) -> Result<Self, D::Error> {
+    fn deserialize<D: Deserializer>(d: D) -> Result<Self, D::Error> {
         WeakId::deserialize(d).map(Id::new_inner)
     }
 }
 
 impl<T: HasId> Serialize for Id<T>
 where T::Type: Serialize {
-    fn serialize<D: Serializer>(&self, d: &mut D) -> Result<(), D::Error> {
-        self.inner.serialize(d)
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.inner.serialize(s)
     }
 }
 
@@ -263,7 +263,7 @@ impl<T: HasId> Decodable for WeakId<T>
 where T::Type: Decodable {
     fn decode<D: Decoder>(d: &mut D) -> Result<Self, D::Error> {
         Ok(WeakId {
-            id: try!(T::Type::decode(d)),
+            id: T::Type::decode(d)?,
             marker: PhantomData,
         })
     }
@@ -271,9 +271,9 @@ where T::Type: Decodable {
 
 impl<T: HasId> Deserialize for WeakId<T>
 where T::Type: Deserialize {
-    fn deserialize<D: Deserializer>(d: &mut D) -> Result<Self, D::Error> {
+    fn deserialize<D: Deserializer>(d: D) -> Result<Self, D::Error> {
         Ok(WeakId {
-            id: try!(T::Type::deserialize(d)),
+            id: T::Type::deserialize(d)?,
             marker: PhantomData,
         })
     }
@@ -281,8 +281,8 @@ where T::Type: Deserialize {
 
 impl<T: HasId> Serialize for WeakId<T>
 where T::Type: Serialize {
-    fn serialize<D: Serializer>(&self, d: &mut D) -> Result<(), D::Error> {
-        self.id.serialize(d)
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.id.serialize(s)
     }
 }
 

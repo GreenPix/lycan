@@ -2,7 +2,6 @@
 name = "lycan"
 version = "0.1.0"
 authors = ["Vaelden <maugan.villatel@gmail.com>"]
-build = "build.rs"
 
 [lib]
 name="lycan"
@@ -21,11 +20,12 @@ docopt = "0.6"
 nalgebra = "0.10"
 smallvec = "0.2"
 rand = "0.3"
-hyper = "0.9"
+hyper = "0.10"
 bytes = "0.3"
-serde = "0.8"
-serde_json = "0.8"
-uuid = { version = "0.3", features = ["rand","serde"] }
+serde = "0.9"
+serde_json = "0.9"
+serde_derive = "0.9"
+uuid = { version = "0.4", features = ["rand","serde"] }
 futures = "0.1"
 futures-cpupool = "0.1.2"
 tokio-core = "0.1"
@@ -33,19 +33,17 @@ schedule_recv = "0.1"
 error-chain = "0.8"
 
 # Iron and related crates
-iron = { version = "0.4", features = ["ssl"] }
-mount = "0.2.0"
-router = "0.4"
-bodyparser = "0.4"
+iron = "0.5"
+mount = "0.3"
+router = "0.5"
+bodyparser = "0.6"
 plugin = "0.2"
 modifier = "0.1"
-iron-error-router = "0.2"
-
-[build-dependencies]
-serde_codegen = "0.8"
+#iron-error-router = "0.2" # This dependency does not support iron 0.5
 
 [dependencies.lycan-serialize]
 git = "https://github.com/Greenpix/lycan-serialize.git"
+rev = "78f6f57fcef45db9e1a2ee24c6d5a8d21c040c1a"
 
 [dependencies.aariba]
 git = "https://github.com/GreenPix/aariba.git"
