@@ -158,14 +158,16 @@ impl <'a> DoubleIterMut<'a> {
 
 #[cfg(test)]
 mod test {
+    use uuid::Uuid;
     use entity::{Entity, EntityStore};
+    use data::Player;
     use id::Id;
     #[test]
     fn test() {
         let mut store = EntityStore::new();
-        store.push(Entity::fake_player(Id::forge(0)));
-        store.push(Entity::fake_player(Id::forge(1)));
-        store.push(Entity::fake_player(Id::forge(2)));
+        store.push(Entity::from(Player::default_player(Id::forge(Uuid::nil()))));
+        store.push(Entity::from(Player::default_player(Id::forge(Uuid::nil()))));
+        store.push(Entity::from(Player::default_player(Id::forge(Uuid::nil()))));
         {
             let mut double_iter = store.iter_mut_wrapper();
             while let Some((entity,mut wrapper)) = double_iter.next_item() {
