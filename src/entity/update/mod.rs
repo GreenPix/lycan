@@ -11,6 +11,7 @@ use entity::{
 };
 use messages::Notification;
 use id::Id;
+use data::Map;
 
 use lycan_serialize::Direction;
 use instance::{
@@ -25,6 +26,7 @@ mod movement;
 pub fn update(
     entities: &mut EntityStore,
     notifications: &mut Vec<Notification>,
+    map: &Map,
     scripts: &AaribaScripts,
     tick_id: u64,
     tick_duration: f32,
@@ -39,7 +41,7 @@ pub fn update(
     // when happening during the same tick
 
     let mut tick_events = Vec::new();
-    movement::resolve_movements(entities, notifications, tick_duration);
+    movement::resolve_movements(entities, notifications, map, tick_duration);
     attacks::resolve_attacks(entities, notifications, scripts, &mut tick_events, tick_duration);
     generate_position_updates(entities, notifications, tick_id);
     tick_events

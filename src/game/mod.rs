@@ -407,7 +407,7 @@ impl ActiveMaps {
                     sender.clone(),
                     scripts.clone(),
                     trees.clone(),
-                    map_id,
+                    map.clone(),
                     tick_duration,
                     );
 

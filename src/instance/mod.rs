@@ -141,7 +141,7 @@ impl Actors {
 pub struct Instance {
     id: Id<Instance>,
 
-    map_id: Id<Map>,
+    map: Map,
     entities: EntityStore,
     actors: Actors,
     request: UnboundedSender<Request>,
@@ -163,10 +163,15 @@ impl Instance {
     pub fn spawn_instance(request: UnboundedSender<Request>,
                           scripts: AaribaScripts,
                           trees: BehaviourTrees,
-                          map_id: Id<Map>,
+                          map: Map,
                           tick_duration: f32,
                           ) -> InstanceRef {
-        let mut instance = Instance::new(request, scripts, trees, map_id, tick_duration);
+        let map_id = map.get_id();
+        let mut instance = Instance::new(request,
+                                         scripts,
+                                         trees,
+                                         map,
+                                         tick_duration);
         let id = instance.get_id();
         let created_at = instance.created_at;
         let (sender, rx) = mpsc::channel();
@@ -200,7 +205,7 @@ impl Instance {
                         let vec = instance.entities
                             .iter()
                             .filter(|e| e.is_player())
-                            .map(|e| e.into_management_representation(instance.id, instance.map_id))
+                            .map(|e| e.into_management_representation(instance.id, instance.map.get_id()))
                             .collect();
                         instance.request.send(Request::PlayerUpdate(vec)).unwrap();
                     },
@@ -221,14 +226,14 @@ impl Instance {
     fn new(request: UnboundedSender<Request>,
            scripts: AaribaScripts,
            trees: BehaviourTrees,
-           map_id: Id<Map>,
+           map: Map,
            tick_duration: f32,
            ) -> Instance {
         use uuid::Uuid;
 
         let mut instance = Instance {
             id: Id::new(),
-            map_id: map_id,
+            map: map,
             entities: EntityStore::new(),
             actors: Default::default(),
             request: request,
@@ -389,6 +394,7 @@ impl Instance {
         let events = entity::update(
             &mut self.entities,
             &mut self.next_notifications,
+            &self.map,
             &self.scripts,
             self.tick_id,
             self.tick_duration,

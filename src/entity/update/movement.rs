@@ -9,20 +9,23 @@ use entity::{
     Order,
     EntityStore,
 };
+use data::Map;
 
 pub fn resolve_movements(
     entities: &mut EntityStore,
     notifications: &mut Vec<Notification>,
+    map: &Map,
     tick_duration: f32,
     ) {
     for entity in entities.iter_mut() {
-        resolve_collisions(entity, notifications, tick_duration)
+        resolve_collisions(entity, notifications, map, tick_duration)
     }
 }
 
 fn resolve_collisions(
     entity: &mut Entity,
     _notifications: &mut Vec<Notification>,
+    map: &Map,
     tick_duration: f32,
     ) {
     // Assume no collisions at the moment ...
