@@ -62,7 +62,7 @@ pub struct Game {
     tick_duration: f32,
     shutdown: bool,
     handle: Handle,
-    game_ref: Option<Weak<RefCell<Game>>>,
+    game_ref: Weak<RefCell<Game>>,
 
     // TODO: Should this be integrated with the resource manager?
     scripts: AaribaScripts,
@@ -92,7 +92,7 @@ impl Game {
             scripts: scripts,
             trees: trees,
             handle: handle,
-            game_ref: None,
+            game_ref: Weak::new(),
         }
     }
 
@@ -130,7 +130,7 @@ impl Game {
             {
                 let weak_game = Rc::downgrade(&game);
                 let mut game_ref = game.borrow_mut();
-                (*game_ref).game_ref = Some(weak_game);
+                (*game_ref).game_ref = weak_game;
             }
 
             let game_clone = game.clone();
@@ -142,7 +142,7 @@ impl Game {
             });
 
             debug!("Started game");
-            // This should never return
+            // This currently never returns
             core.run(fut).unwrap();
 
             debug!("Stopping game");
@@ -296,7 +296,7 @@ impl Game {
     fn player_ready(&mut self, mut actor: NetworkActor, id: Id<Player>) {
         use self::resource_manager::ResultExt;
 
-        let game_ref = self.game_ref.clone().unwrap();
+        let game_ref = self.game_ref.clone();
         let fut = self.resource_manager.get_player(id)
             .and_then(move |entity| {
                 let map = entity.get_map_position().unwrap();
