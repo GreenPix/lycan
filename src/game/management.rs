@@ -352,7 +352,7 @@ impl ::std::fmt::Display for AuthenticationError {
 
 
 fn get_instances(game: &Game, map: WeakId<Map>) -> Option<Vec<GetInstances>> {
-    game.map_instances.get(&map).map(|instances| {
+    game.maps.inner.get(&map).map(|&(ref _map, ref instances)| {
         instances.values().map(|refe| {
             GetInstances {
                 id: refe.get_id(),

@@ -29,6 +29,7 @@ pub struct ResourceManager {
 }
 
 impl ResourceManager {
+    /// Builds a resource manager that will fetch data from a REST API
     pub fn new_rest(base_url: String) -> ResourceManager {
         let backend = Box::new(RestBackend::new(base_url));
         ResourceManager {
@@ -36,15 +37,13 @@ impl ResourceManager {
         }
     }
 
+    // TODO: make sure the resource manager does not load the same resource twice
+    /// Fetches a map by its ID using the current backend
     pub fn get_map(&mut self, map: Id<Map>) -> BoxFuture<Map, Error> {
-        let res = if map != UNIQUE_MAP.get_id() {
-            Err(format!("Map id requested different than current UNIQUE_MAP: {}", map).into())
-        } else {
-            Ok(UNIQUE_MAP.clone())
-        };
-        res.into_future().boxed()
+        self.inner.get_map(map)
     }
 
+    /// Fetches a player by its ID using the current backend
     pub fn get_player(&mut self, player: Id<Player>) -> BoxFuture<Entity, Error> {
         self.inner.get_player(player)
     }
@@ -62,7 +61,14 @@ struct RestBackend {
 
 impl Backend for RestBackend {
     fn get_map(&mut self, map: Id<Map>) -> BoxFuture<Map, Error> {
-        unimplemented!();
+        let url = format!("{}/maps/{}", self.base_url, map);
+        self.pool.spawn(future::lazy(move || {
+            let serialized_map = utils::get_file_from_url(&url)
+                .chain_err(|| format!("Cannot GET {}", url))?;
+            let map = serde_json::from_str::<Map>(&serialized_map)
+                .chain_err(|| "Failed to deserialize map")?;
+            Ok(map)
+        })).boxed()
     }
 
     fn get_player(&mut self, player: Id<Player>) -> BoxFuture<Entity, Error> {

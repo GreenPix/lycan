@@ -1,5 +1,5 @@
 use std::net::{self,SocketAddr,Ipv4Addr};
-use std::collections::HashMap;
+use std::collections::hash_map::{HashMap,Entry};
 use std::thread;
 use std::io;
 use std::boxed::FnBox;
@@ -12,6 +12,7 @@ use tokio_core::reactor::{Core,Handle};
 use futures::sync::mpsc::{self,UnboundedReceiver,UnboundedSender};
 use futures::future::{self,Future,IntoFuture};
 use futures::Stream;
+use error_chain::ChainedError;
 
 use lycan_serialize::AuthenticationToken;
 
@@ -28,7 +29,7 @@ use messages::{
     Notification,
     ActorCommand,
 };
-use network;
+use network::{self,Client};
 use scripts::{AaribaScripts,BehaviourTrees};
 
 use self::resource_manager::{Error,ResourceManager};
@@ -36,10 +37,7 @@ use self::authentication::AuthenticationManager;
 
 mod authentication;
 mod resource_manager;
-//mod arriving_client;
 mod management;
-
-const RESOURCE_MANAGER_THREADS: usize = 2;
 
 #[derive(Debug,Clone)]
 pub struct GameParameters {
@@ -49,9 +47,10 @@ pub struct GameParameters {
 }
 
 pub struct Game {
-    maps: HashMap<Id<Map>, Map>,
+    //maps: HashMap<Id<Map>, Map>,
     // Keep track of all _active_ (not shuting down) instances, indexed by map ID
-    map_instances: HashMap<Id<Map>, HashMap<Id<Instance>, InstanceRef>>,
+    maps: ActiveMaps,
+    //map_instances: HashMap<Id<Map>, HashMap<Id<Instance>, InstanceRef>>,
     // Keep track of all instances still alive
     instances: HashMap<Id<Instance>, InstanceRef>,
     players: HashMap<Id<Player>, EntityManagement>,
@@ -79,8 +78,7 @@ impl Game {
         handle: Handle,
         ) -> Game {
         Game {
-            maps: HashMap::new(),
-            map_instances: HashMap::new(),
+            maps: ActiveMaps::new(),
             instances: HashMap::new(),
             players: HashMap::new(),
             players_ref: HashMap::new(),
@@ -110,7 +108,7 @@ impl Game {
             network::start_server(addr, sender2.clone());
 
             management::start_management_api(sender2.clone());
-            let mut game = Game::new(
+            let game = Game::new(
                 scripts,
                 behaviour_trees,
                 sender2.clone(),
@@ -119,11 +117,6 @@ impl Game {
                 core.handle(),
                 );
 
-            // XXX: Hacks
-            //let _ = game.resource_manager.load_map(UNIQUE_MAP.get_id());
-            game.map_instances.insert(UNIQUE_MAP.get_id(), HashMap::new());
-            game.maps.insert(UNIQUE_MAP.get_id(), UNIQUE_MAP.clone());
-            // End hacks
             tx1.send(sender2).unwrap();
 
             let game = Rc::new(RefCell::new(game));
@@ -191,47 +184,7 @@ impl Game {
                 }
             }
             Request::NewClient(client) => {
-                if self.shutdown {
-                    // Drop the client
-                } else {
-                    let player_id = Id::forge(client.uuid);
-
-                    // TODO: Generate earlier? (during the connexion, in the network code)
-                    let client_id = Id::new();
-
-                    let (tx, rx) = std_mpsc::channel();
-                    let actor = NetworkActor::new(client_id, client, rx);
-                    if let Some(old_actor) = self.players_ref.insert(player_id, tx) {
-                        // This is the case where a client tries to reconnect with the ID
-                        // of a character already in the game
-                        //
-                        // In this case, we should kick the client associated with that ID,
-                        // and replace it with this new client.
-                        //
-                        // However, it can also happen that the client currently in game is
-                        // actually leaving already, or will start to leave shortly (yay 
-                        // asynchronicity!) and the two messages (kick/replace, and actor+entity)
-                        // will cross each other.
-                        //
-                        // We thus need to make sure that, whatever the case we are in, the
-                        // newly connected client will eventually get connected to the right
-                        // entity, and that no two entities have the same player ID at the
-                        // same time
-
-                        // TODO: Unimplemented ...
-                        error!("Unimplemented multiple connections for same player ID {}", player_id);
-                        // For now kick both clients
-                        // This will however break Sarosa in Authentication-less mode (the client
-                        // will not know why it has been kicked)
-                        drop(actor);
-                        let _ = old_actor.send(ActorCommand::Kick);
-                        // Note: the Sender<ActorCommand> will be invalid (we just dropped the
-                        // newly-created associated actor) but this should not cause any problems
-                        // It should get removed when the connected entity comes back
-                    } else {
-                        self.player_ready(actor, player_id);
-                    }
-                }
+                self.new_client(client);
             }
         }
         // Default: don't exit
@@ -240,11 +193,7 @@ impl Game {
 
     fn start_shutdown(&mut self) {
         self.shutdown = true;
-        for (_id, instances) in self.map_instances.drain() {
-            for instance in instances.values() {
-                let _ = instance.send(Command::Shutdown);
-            }
-        }
+        self.maps.broadcast_shutdown();
 
         // TODO: Shutdown the network side
         // At the moment, there is no clean way of doing this
@@ -257,66 +206,127 @@ impl Game {
         actor: NetworkActor,
         entities: Vec<Entity>,
         ) {
-        match self.map_instances.get_mut(&map) {
-            Some(instances) => {
-                // TODO: Load balancing
-                let register_new_instance = match instances.iter_mut().nth(0) {
-                    Some((_id, instance)) => {
-                        // An instance is already there, send the actor to it
-                        instance.send(Command::NewClient(actor,entities)).unwrap();
-                        None
+        if !self.maps.has_map(map) {
+            let map_id = map;
+            let game_ref = self.game_ref.clone();
+            let fut = self.resource_manager.get_map(map)
+                .then(move |map_res| {
+                    let game_ref = game_ref.upgrade()
+                        .expect("Upgrading Weak to Rc failed");
+                    let mut game = game_ref.borrow_mut();
+                    match map_res {
+                        Ok(map) => {
+                            let _ = game.maps.add_map(map);
+                            game.assign_actor_to_map(
+                                map_id,
+                                actor,
+                                entities);
+                            Ok(())
+                        }
+                        Err(e) => {
+                            error!("Error while loading map {}, dropping new actor {}",
+                                   e.display(), actor.get_id());
+                            game.actor_leaving(actor, entities);
+                            Err(())
+                        }
                     }
-                    None => {
-                        // No instance for this map, spawn one
-                        let instance = Instance::spawn_instance(
-                            self.sender.clone(),
-                            self.scripts.clone(),
-                            self.trees.clone(),
-                            map,
-                            self.tick_duration,
-                            );
-                        instance.send(Command::NewClient(actor,entities)).unwrap();
-                        Some(instance)
-                    }
-                };
+                });
+            self.handle.spawn(fut);
+        } else {
+            let instance = self.maps.get_map_instance(map,
+                                                      &self.sender,
+                                                      &self.scripts,
+                                                      &self.trees,
+                                                      self.tick_duration)
+                .expect("ActiveMap.has_map() returned true, but then failed to get an instance??");
+            instance.send(Command::NewClient(actor, entities)).unwrap();
+        }
+    }
 
-                // Because of the borrow checker
-                if let Some(instance) = register_new_instance {
-                    let id = instance.get_id();
-                    instances.insert(id, instance.clone());
-                    self.instances.insert(id, instance);
-                }
-            }
-            None => {
-                error!("Trying to access nonexisting map {}", map);
+    fn new_client(&mut self, client: Client) {
+        if self.shutdown {
+            // Drop the client
+        } else {
+            let player_id = Id::forge(client.uuid);
+
+            // TODO: Generate earlier? (during the connexion, in the network code)
+            let client_id = Id::new();
+
+            let (tx, rx) = std_mpsc::channel();
+            let actor = NetworkActor::new(client_id, client, rx);
+            if let Some(old_actor) = self.players_ref.insert(player_id, tx) {
+                // This is the case where a client tries to reconnect with the ID
+                // of a character already in the game
+                //
+                // In this case, we should kick the client associated with that ID,
+                // and replace it with this new client.
+                //
+                // However, it can also happen that the client currently in game is
+                // actually leaving already, or will start to leave shortly (yay 
+                // asynchronicity!) and the two messages (kick/replace, and actor+entity)
+                // will cross each other.
+                //
+                // We thus need to make sure that, whatever the case we are in, the
+                // newly connected client will eventually get connected to the right
+                // entity, and that no two entities have the same player ID at the
+                // same time
+
+                // TODO: Unimplemented ...
+                error!("Unimplemented multiple connections for same player ID {}", player_id);
+                // For now kick both clients
+                // This will however break Sarosa in Authentication-less mode (the client
+                // will not know why it has been kicked)
+                drop(actor);
+                let _ = old_actor.send(ActorCommand::Kick);
+                // Note: the Sender<ActorCommand> will be invalid (we just dropped the
+                // newly-created associated actor) but this should not cause any problems
+                // It should get removed when the connected entity comes back
+            } else {
+                self.player_ready(actor, player_id);
             }
         }
     }
 
     fn player_ready(&mut self, mut actor: NetworkActor, id: Id<Player>) {
-        use self::resource_manager::ResultExt;
-
         let game_ref = self.game_ref.clone();
         let fut = self.resource_manager.get_player(id)
-            .and_then(move |entity| {
-                let map = entity.get_map_position().unwrap();
-                actor.register_entity(entity.get_id());
-                let notification = Notification::this_is_you(entity.get_id().as_u64());
-                actor.send_message(notification);
-                let game_ref = game_ref.upgrade().ok_or_else(|| "Upgrading Weak to Rc failed")?;
+            .then(move |entity_res| {
+                let game_ref = game_ref.upgrade()
+                    .expect("Upgrading Weak to Rc failed");
                 let mut game = game_ref.borrow_mut();
-                game.assign_actor_to_map(map, actor, vec![entity]);
-                Ok(())
-            }).map_err(|e| {
-                error!("Error while processing player: {}", e);
+                match entity_res {
+                    Ok(entity) => {
+                        let map = entity.get_map_position().unwrap();
+                        actor.register_entity(entity.get_id());
+                        let notification = Notification::this_is_you(entity.get_id().as_u64());
+                        actor.send_message(notification);
+                        game.assign_actor_to_map(map, actor, vec![entity]);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        error!("Error while processing player: {}", e.display());
+                        game.players.remove(&id);
+                        if let Some(sender) = game.players_ref.remove(&id) {
+                            let _ = sender.send(ActorCommand::Kick);
+                        }
+                        Err(())
+                    }
+                }
             });
 
         self.handle.spawn(fut);
     }
 
+    fn actor_leaving(&mut self, _actor: NetworkActor, entities: Vec<Entity>) {
+        for entity in entities {
+            self.entity_leaving(entity);
+        }
+    }
+
     fn entity_leaving(&mut self, entity: Entity) {
         let player: Option<Player> = entity.into();
         if let Some(player) = player {
+            debug!("Player leaving: {}", player.id);
             self.players.remove(&player.id);
 
             // Make sure this handles double-connexion problems
@@ -337,34 +347,86 @@ impl Game {
     }
 
     fn get_active_maps(&self) -> Vec<Map> {
-        self.maps.values().cloned().collect()
+        self.maps.get_active_maps()
     }
 }
 
-type Callback = Box<FnBox(&mut Game) + Send>;
-
-struct Callbacks {
-    callbacks: HashMap<usize, Vec<Callback>>,
+struct ActiveMaps {
+    inner: HashMap<Id<Map>, (Map, HashMap<Id<Instance>, InstanceRef>)>,
 }
 
-impl Callbacks {
-    fn new() -> Callbacks {
-        Callbacks {
-            callbacks: HashMap::new(),
+impl ActiveMaps {
+    fn new() -> ActiveMaps {
+        ActiveMaps {
+            inner: HashMap::new(),
         }
     }
 
-    fn add<F>(&mut self, job: usize, cb: F)
-    where F: FnOnce(&mut Game) + 'static + Send {
-        self.add_callback_inner(job, Box::new(cb))
+    // Add a map to the pool of available maps
+    fn add_map(&mut self, map: Map) -> Result<(),()> {
+        match self.inner.entry(map.get_id()) {
+            Entry::Vacant(e) => {
+                e.insert((map, HashMap::new()));
+                Ok(())
+            }
+            Entry::Occupied(_) => {
+                error!("Tried to re-add a map that was already loaded: {}", map.get_id());
+                Err(())
+            }
+        }
     }
 
-    fn add_callback_inner(&mut self, job: usize, cb: Callback) {
-        self.callbacks.entry(job).or_insert(Vec::new()).push(cb);
+    fn has_map(&self, map: Id<Map>) -> bool {
+        self.inner.contains_key(&map)
     }
 
-    fn get_callbacks(&mut self, job: usize) -> Vec<Callback> {
-        self.callbacks.remove(&job).unwrap_or(Vec::new())
+    /// Get existing instance, or if necessary spawn a new one
+    /// If the map data was not available, return an error
+    fn get_map_instance(&mut self,
+                        map_id: Id<Map>,
+                        sender: &UnboundedSender<Request>,
+                        scripts: &AaribaScripts,
+                        trees: &BehaviourTrees,
+                        tick_duration: f32,
+                        ) -> Result<&InstanceRef, ()> {
+        match self.inner.get_mut(&map_id) {
+            None => {
+                error!("Tried to spawn an instance on a non-available map {}", map_id);
+                Err(())
+            }
+            Some(&mut (ref map, ref mut hashmap)) => {
+                // FIXME: Non-Lexical Lifetimes would help here
+                if !hashmap.is_empty() {
+                    // Unwrap here should never fail
+                    let (_id, instance) = hashmap.iter().nth(0).unwrap();
+                    return Ok(instance);
+                }
+                let instance = Instance::spawn_instance(
+                    sender.clone(),
+                    scripts.clone(),
+                    trees.clone(),
+                    map_id,
+                    tick_duration,
+                    );
+
+                let instance_id = instance.get_id();
+                let instance_ref = hashmap.entry(instance_id)
+                    .or_insert(instance);
+                Ok(instance_ref)
+            }
+        }
+    }
+
+    fn broadcast_shutdown(&mut self) {
+        for (_id, (_map, instances)) in self.inner.drain() {
+            for instance in instances.values() {
+                let _ = instance.send(Command::Shutdown);
+            }
+        }
+    }
+
+    fn get_active_maps(&self) -> Vec<Map> {
+        self.inner.values().map(|&(ref map, _)| map.clone()).collect()
     }
 }
 
